@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/job_repository
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    show-sql: true
+    open-in-view: false
+  batch:
+    jdbc:
+      # when we launch a job, it should create the data model for the job repository within our schema if it doesn't exist
+      initialize-schema: always
+      isolation-level-for-create: default
