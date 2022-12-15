@@ -145,17 +145,16 @@ public class SpringBatchDemoApplication {
                 .start(packageItemStep())
                 // conditional flow
                 .next(driveToAddressStep())
-                    .on("FAILED") // equals statement
-                    .to(storePackageStep()) // then statement
+                    .on("FAILED")
+//                    .stop()
+                    .fail()
                 .from(driveToAddressStep())
                     .on("*").to(decider())
                         .on("PRESENT").to(givePackageToCustomerStep())
                             .next(receiptDecider())
-                                .on("CORRECT")
-                                .to(thankCustomerStep())
+                                .on("CORRECT").to(thankCustomerStep())
                             .from(receiptDecider())
-                                .on("INCORRECT")
-                                .to(refundStep())
+                                .on("INCORRECT").to(refundStep())
                     .from(decider())
                         .on("NOT_PRESENT").to(leaveAtDoorStep())
                 .end()
