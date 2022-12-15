@@ -632,3 +632,98 @@ Here is a list of the available listeners: `JobExecutionListener, StepExecutionL
 You can see that a listener exists for almost every object within the batch domain, allowing logic to be introduced typically before and after these components execute. Soon, we'll be working with a step execution listener that allows us to interject logic before or after a step executes.</br>
 ![img15.png](img%2Fimg15.png)
 The step execution listener interface defines a `beforeStep` method that is invoked prior to step execution and an `afterStep` method that is invoked once the step has been completed.
+
+##### 3.3 StepExecutionListener
+```shell
+git checkout 3.3-step-execution-listener
+```
+![img16.png](img/img16.png)
+The StepExecutionListener that we'll be creating is going to determine whether or not the flowers have thorns so that we can appropriately proceed to the next step. 
+```java
+public class FlowersSelectionStepExecutionListener implements StepExecutionListener {
+    @Override
+    public void beforeStep(StepExecution stepExecution) {
+        System.out.println("Executing before step logic");
+    }
+
+    @Override
+    public ExitStatus afterStep(StepExecution stepExecution) {
+        System.out.println("Executing after step logic");
+        var flowerType = stepExecution.getJobParameters().getString("type");
+        return "roses".equalsIgnoreCase(flowerType)
+                ? new ExitStatus("TRIM_REQUIRED")
+                : new ExitStatus("NO_TRIM_REQUIRED");
+    }
+}
+```
+RemoveThornsStep that we're going to conditionally invoke pending the results of the status provided by our StepExecutionListener.
+```java
+@Bean
+public Step selectFlowersStep() {
+    return stepBuilderFactory.get("selectFlowersStep")
+        .tasklet((contribution, chunkContext) -> {
+            System.out.println("Gathering flowers for order");
+            return RepeatStatus.FINISHED;
+        })
+        .listener(selectFlowersListener())
+        .build();
+}
+    
+@Bean
+public Step removeThornsStep() {
+    return stepBuilderFactory.get("removeThornsStep")
+        .tasklet((contribution, chunkContext) -> {
+            System.out.println("Remove thorns from roses");
+            return RepeatStatus.FINISHED;
+        }).build();
+}
+
+@Bean
+public Step arrangeFlowersStep() {
+    return stepBuilderFactory.get("arrangeFlowersStep")
+        .tasklet((contribution, chunkContext) -> {
+            System.out.println("Arranging flowers to order");
+            return RepeatStatus.FINISHED;
+        }).build();
+}
+
+@Bean
+public StepExecutionListener selectFlowersListener() {
+    return new FlowersSelectionStepExecutionListener();
+}
+
+@Bean
+public Job prepareFlowersJob() {
+    return jobBuilderFactory.get("prepareFlowersJob")
+        .start(selectFlowersStep())
+            .on("TRIM_REQUIRED")
+            .to(removeThornsStep())
+            .next(arrangeFlowersStep())
+        .from(selectFlowersStep())
+            .on("NO_TRIM_REQUIRED")
+            .to(arrangeFlowersStep())
+        .end()
+        .build();
+}
+```
+Run run_flowers.bat:
+```shell
+call mvn clean package -DskipTests
+call java -jar "-Dspring.batch.job.names=prepareFlowersJob" ./target/spring-batch-demo-1.0.0.jar "type=roses"
+```
+Console output:
+```2022-12-16 00:24:08.970  INFO 29316 --- [           main] o.s.b.c.l.support.SimpleJobLauncher      : Job: [FlowJob: [name=prepareFlowersJob]] launched with the following parameters: [{type=roses}]
+2022-12-16 00:24:09.054  INFO 29316 --- [           main] o.s.batch.core.job.SimpleStepHandler     : Executing step: [selectFlowersStep]
+Executing before step logic
+Gathering flowers for order
+Executing after step logic
+2022-12-16 00:24:09.104  INFO 29316 --- [           main] o.s.batch.core.step.AbstractStep         : Step: [selectFlowersStep] executed in 50ms
+2022-12-16 00:24:09.140  INFO 29316 --- [           main] o.s.batch.core.job.SimpleStepHandler     : Executing step: [removeThornsStep]
+Remove thorns from roses
+2022-12-16 00:24:09.170  INFO 29316 --- [           main] o.s.batch.core.step.AbstractStep         : Step: [removeThornsStep] executed in 30ms
+2022-12-16 00:24:09.199  INFO 29316 --- [           main] o.s.batch.core.job.SimpleStepHandler     : Executing step: [arrangeFlowersStep]
+Arranging flowers to order
+2022-12-16 00:24:09.225  INFO 29316 --- [           main] o.s.batch.core.step.AbstractStep         : Step: [arrangeFlowersStep] executed in 26ms
+2022-12-16 00:24:09.247  INFO 29316 --- [           main] o.s.b.c.l.support.SimpleJobLauncher      : Job: [FlowJob: [name=prepareFlowersJob]] completed with the following parameters: [{type=roses}] an
+d the following status: [COMPLETED] in 238ms
+```
