@@ -32,6 +32,17 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
+    public Step storePackageStep() {
+        return stepBuilderFactory
+                .get("storePackageStep")
+                .tasklet((stepContribution, chunkContext) -> {
+                    System.out.println("Storing the package while the customer address is located.");
+                    return RepeatStatus.FINISHED;
+                })
+                .build();
+    }
+
+    @Bean
     public Step packageItemStep() {
         return stepBuilderFactory
                 .get("packageItemStep") // specify the name of the step
@@ -48,9 +59,13 @@ public class SpringBatchDemoApplication {
 
     @Bean
     public Step driveToAddressStep() {
+        boolean GOT_LOST = false;
         return stepBuilderFactory
                 .get("driveToAddressStep")
                 .tasklet((contribution, chunkContext) -> {
+                    if (GOT_LOST) {
+                        throw new RuntimeException("Got lost driving to the address");
+                    }
                     System.out.println("Successfully arrived to address.");
                     return RepeatStatus.FINISHED;
                 })
@@ -68,14 +83,29 @@ public class SpringBatchDemoApplication {
                 .build();
     }
 
+    /**
+     * Using the transition elements in Spring Batch:
+     * <ul>
+     *     <li>on</li>
+     *     <li>to</li>
+     *     <li>from</li>
+     * </ul>
+     * We were able to build a conditional job, that changed its flow dynamically depending, upon the exit status of subsequent steps.
+     * This is an important feature of Spring Batch because it allows us to construct complex jobs, that can satisfy more complicated batch requirements.
+     */
     @Bean
     public Job deliverPackageJob() {
         return jobBuilderFactory
-                .get("deliverPackageJob") // specify the name of our job
-                // transition one step to another step. These steps are executed in sequence.
+                .get("deliverPackageJob")
                 .start(packageItemStep())
+                // conditional flow
                 .next(driveToAddressStep())
-                .next(givePackageToCustomerStep())
+                    .on("FAILED") // equals statement
+                    .to(storePackageStep()) // then statement
+                .from(driveToAddressStep())
+                    .on("*")
+                    .to(givePackageToCustomerStep())
+                .end()
                 .build();
     }
 
