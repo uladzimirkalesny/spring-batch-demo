@@ -422,6 +422,7 @@ The Exit Status, on the other hand, uses literal values and we can define our ow
 ```shell
 git checkout 2.8-controlling-flow-with-custom-status
 ```
+The JobExecution decider is registered within the Job configuration and is used to provide a custom ExitStatus following the execution of a step.</br>
 When more granular control over the conditional flow of the batch job is required developers can implement a `JobExecutionDecider`.</br>
 `JobExecutionDecider` provides better of the job flow by ExitStatus of the Step to be modified into a Custom Exit Status.</br>
 It's very useful when standard Exit Statuses not suffice.</br>
@@ -456,6 +457,36 @@ public Job deliverPackageJob() {
         .from(driveToAddressStep())
             .on("*").to(decider())
                 .on("PRESENT").to(givePackageToCustomerStep())
+            .from(decider())
+                .on("NOT_PRESENT").to(leaveAtDoorStep())
+        .end()
+        .build();
+}
+```
+##### 2.9 Challenge creating a conditional flow
+```shell
+git checkout 2.9-challenge-creating-a-conditional-flow
+```
+Code example
+```java
+@Bean
+public Job deliverPackageJob() {
+    return jobBuilderFactory
+        .get("deliverPackageJob")
+        .start(packageItemStep())
+        // conditional flow
+        .next(driveToAddressStep())
+            .on("FAILED") // equals statement
+            .to(storePackageStep()) // then statement
+        .from(driveToAddressStep())
+            .on("*").to(decider())
+                .on("PRESENT").to(givePackageToCustomerStep())
+                    .next(receiptDecider())
+                        .on("CORRECT")
+                        .to(thankCustomerStep())
+                    .from(receiptDecider())
+                        .on("INCORRECT")
+                        .to(refundStep())
             .from(decider())
                 .on("NOT_PRESENT").to(leaveAtDoorStep())
         .end()
