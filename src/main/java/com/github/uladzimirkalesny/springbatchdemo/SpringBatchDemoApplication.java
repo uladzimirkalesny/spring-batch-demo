@@ -1,10 +1,12 @@
 package com.github.uladzimirkalesny.springbatchdemo;
 
 import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.job.flow.JobExecutionDecider;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -29,6 +31,22 @@ public class SpringBatchDemoApplication {
                                       StepBuilderFactory stepBuilderFactory) {
         this.jobBuilderFactory = jobBuilderFactory;
         this.stepBuilderFactory = stepBuilderFactory;
+    }
+
+    @Bean
+    public JobExecutionDecider decider() {
+        return new DeliveryDecider();
+    }
+
+    @Bean
+    public Step leaveAtDoorStep() {
+        return stepBuilderFactory
+                .get("leaveAtDoorStep")
+                .tasklet((stepContribution, chunkContext) -> {
+                    System.out.println("Leaving the package at the door.");
+                    return RepeatStatus.FINISHED;
+                })
+                .build();
     }
 
     @Bean
@@ -103,8 +121,10 @@ public class SpringBatchDemoApplication {
                     .on("FAILED") // equals statement
                     .to(storePackageStep()) // then statement
                 .from(driveToAddressStep())
-                    .on("*")
-                    .to(givePackageToCustomerStep())
+                    .on("*").to(decider())
+                        .on("PRESENT").to(givePackageToCustomerStep())
+                    .from(decider())
+                        .on("NOT_PRESENT").to(leaveAtDoorStep())
                 .end()
                 .build();
     }
