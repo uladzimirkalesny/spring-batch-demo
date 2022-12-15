@@ -39,6 +39,33 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
+    public JobExecutionDecider receiptDecider() {
+        return new ReceiptDecider();
+    }
+
+    @Bean
+    public Step refundStep() {
+        return stepBuilderFactory
+                .get("refundStep")
+                .tasklet((stepContribution, chunkContext) -> {
+                    System.out.println("Refunding customer money.");
+                    return RepeatStatus.FINISHED;
+                })
+                .build();
+    }
+
+    @Bean
+    public Step thankCustomerStep() {
+        return stepBuilderFactory
+                .get("thankCustomerStep")
+                .tasklet((stepContribution, chunkContext) -> {
+                    System.out.println("Thanking the customer.");
+                    return RepeatStatus.FINISHED;
+                })
+                .build();
+    }
+
+    @Bean
     public Step leaveAtDoorStep() {
         return stepBuilderFactory
                 .get("leaveAtDoorStep")
@@ -123,6 +150,12 @@ public class SpringBatchDemoApplication {
                 .from(driveToAddressStep())
                     .on("*").to(decider())
                         .on("PRESENT").to(givePackageToCustomerStep())
+                            .next(receiptDecider())
+                                .on("CORRECT")
+                                .to(thankCustomerStep())
+                            .from(receiptDecider())
+                                .on("INCORRECT")
+                                .to(refundStep())
                     .from(decider())
                         .on("NOT_PRESENT").to(leaveAtDoorStep())
                 .end()
