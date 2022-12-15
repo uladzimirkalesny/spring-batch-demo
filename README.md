@@ -493,3 +493,129 @@ public Job deliverPackageJob() {
         .build();
 }
 ```
+### 3 Advanced Job Flows
+```shell
+git checkout 3.0-advanced-job-flows
+```
+The batch status assigned to a job or step is important because it is used by the framework to determine if a job succeeded or failed, which ultimately, determines if a job can be restarted.</br>
+Job flows are not always simple and sometimes we need control over the batch status assigned to a job.</br>
+To handle this, Spring Batch provides three transitions to stop a job, and override the default batch status.</br>
+These transition elements are `end`, `fail` and `stop`.</br>
+By default, the batch status of a job is marked as `completed` if the exit status of its steps does not return `failed` and no transitions are specified.</br>
+When transitions such as `on` are present, it gets a little bit more complicated. In some scenarios, a step can fail but due to an `on` transition, the batch status of the job is marked as `completed`.</br>
+When we want to alter this behavior, we use one of the stop transitions. If we take a look at our job configuration, you'll see that we have already used the `end` stop transition.
+```java
+@Bean
+public Job deliverPackageJob() {
+    return jobBuilderFactory
+        .get("deliverPackageJob")
+        .start(packageItemStep())
+        .next(driveToAddressStep())
+            .on("FAILED") // equals statement
+            .to(storePackageStep()) // then statement
+        .from(driveToAddressStep())
+            .on("*").to(decider())
+                .on("PRESENT").to(givePackageToCustomerStep())
+                    .next(receiptDecider())
+                        .on("CORRECT")
+                        .to(thankCustomerStep())
+                    .from(receiptDecider())
+                        .on("INCORRECT")
+                        .to(refundStep())
+            .from(decider())
+                .on("NOT_PRESENT").to(leaveAtDoorStep())
+        .end()
+        .build();
+}
+```
+Configure our job to fail:
+<ul>
+    <li>go to driveToAddressStep and change our boolean variable to true</li>
+
+```java
+    @Bean
+    public Step driveToAddressStep() {
+        boolean GOT_LOST = true;
+        return stepBuilderFactory
+                .get("driveToAddressStep")
+                .tasklet((contribution, chunkContext) -> {
+                    if (GOT_LOST) {
+                        throw new RuntimeException("Got lost driving to the address");
+                    }
+                    System.out.println("Successfully arrived to address.");
+                    return RepeatStatus.FINISHED;
+                })
+                .build();
+    }
+```
+`boolean GOT_LOST = true;`
+    <li>our job's going to fail but because we have configured our job to use the end stop transition, it's going to be marked as completed</li>
+    <li>run our job and we'll see that we'll receive the exception, because boolean GOT_LOST = true; [java.lang.RuntimeException: Got lost driving to the address]</li>
+    <li>look at the metadata stored regarding the job, batch status is successful, look to batch job execution, we're going to see that it was completed and then look at the step executions and see that our driveToAddressStep was abandoned.</li>
+So that's not what we want to happen. In this case, we would never be able to deliver our package.
+</ul>
+
+That last status was not ideal so let's take a look at another status named `stop`.</br>
+`Stop` is going to allow us to pause the job and then we can fix whatever the problem is and rerun it at a later time.</br>
+```java
+ @Bean
+public Job deliverPackageJob() {
+    return jobBuilderFactory
+        .get("deliverPackageJob")
+        .start(packageItemStep())
+        .next(driveToAddressStep())
+            .on("FAILED")
+            .stop()
+        .from(driveToAddressStep())
+            .on("*").to(decider())
+                .on("PRESENT").to(givePackageToCustomerStep())
+                    .next(receiptDecider())
+                        .on("CORRECT")
+                        .to(thankCustomerStep())
+                    .from(receiptDecider())
+                        .on("INCORRECT")
+                        .to(refundStep())
+            .from(decider())
+                .on("NOT_PRESENT").to(leaveAtDoorStep())
+        .end()
+        .build();
+}
+```
+And in this case, we're just going to pause the job and allow for it to be manually fixed by a batch job operator and then we can rerun it.</br> 
+This time, the job is going to pause. So we'll see the exception thrown. There's our exception but you'll notice that it's in the stopped status.</br>
+Going to allow us to go back and we'll just head into our class and we're going to go to the driveToAddressStep and we're just going to manually fix the job `boolean GOT_LOST = false;`. 
+Typically this would be changing some data or figuring out what the problem was and resolving it.</br>
+Run the job again. You'll notice this time, we're able to actually restart the job and it can successfully process.</br>
+So there we were able to successfully complete the driveToAddressStep and then we went through the remaining flow of the job.</br>
+Go to take a look at an additional status that we can use and that's the failed status. 
+```boolean GOT_LOST = true;```
+And then if we navigate to the configuration of the job, instead of `stopping`, we're just going to go ahead and `fail`.</br>
+Rerun the job. 
+```java
+@Bean
+public Job deliverPackageJob() {
+    return jobBuilderFactory
+        .get("deliverPackageJob")
+        .start(packageItemStep())
+        .next(driveToAddressStep())
+            .on("FAILED")
+         //   .stop()
+            .fail()
+        .from(driveToAddressStep())
+            .on("*").to(decider())
+                .on("PRESENT").to(givePackageToCustomerStep())
+                    .next(receiptDecider())
+                        .on("CORRECT").to(thankCustomerStep())
+                    .from(receiptDecider())
+                        .on("INCORRECT").to(refundStep())
+            .from(decider())
+                .on("NOT_PRESENT").to(leaveAtDoorStep())
+        .end()
+        .build();
+}
+```
+This time, the job will fail, which is much better than being marked as `completed`. We're explicitly marking the job as `failed`.</br>
+So there you see that the status of the job is `failed`. So here we can see that our driveToAddressStep did fail and if we take a look at the status for the job execution, it's failed as well.</br>
+Now, with that, we can go ahead and within our application, we can resolve the problem `boolean GOT_LOST = false;`.</br>
+That's going to allow the job to succeed after rerun the job.</br>
+So using the different stop transitions, and the corresponding methods in the Java configuration, we're able to get better control over the batch status of our job. And that's important because these transitions can put our job in a state that allows us to rerun it. We need to be extra careful when we're using the on transition that we don't place a job into a state because of it's batch status that will not allow us to recover from an error.
