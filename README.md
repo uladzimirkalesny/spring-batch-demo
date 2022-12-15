@@ -619,3 +619,16 @@ So there you see that the status of the job is `failed`. So here we can see that
 Now, with that, we can go ahead and within our application, we can resolve the problem `boolean GOT_LOST = false;`.</br>
 That's going to allow the job to succeed after rerun the job.</br>
 So using the different stop transitions, and the corresponding methods in the Java configuration, we're able to get better control over the batch status of our job. And that's important because these transitions can put our job in a state that allows us to rerun it. We need to be extra careful when we're using the on transition that we don't place a job into a state because of it's batch status that will not allow us to recover from an error.
+
+###### 3.2 Listeners - Extending batch processing
+<b>Listeners</b> provide hooks into the flow of a job at various points that allow you to introduce additional batch processing logic for complex use cases.</br>
+There are many listener interfaces within the framework at the job, step, chunk, and item levels of the domain.</br>
+Listener implementations are created by implementing an interface, or adding annotations to a POJO, then registering the listener at the appropriate configuration level.</br>
+Registered listeners are notified by the framework at key points.</br>
+For example, AfterStep completion.</br>
+Once notified, job processing logic found in the listener is invoked to perform its particular logic at the appropriate point in the batch execution flow.</br>
+So let's say you need to introduce some header information to a file created within a job. After the step writes the file, you may introduce a listener to add the header information once the step is executed.</br> 
+Here is a list of the available listeners: `JobExecutionListener, StepExecutionListener, ChunkListener, SkipListener, ItemReadListener, ItemWriteListener, ItemProcessListener, RetryListener` within the framework that can be applied at various levels of the framework according to your requirements.</br>
+You can see that a listener exists for almost every object within the batch domain, allowing logic to be introduced typically before and after these components execute. Soon, we'll be working with a step execution listener that allows us to interject logic before or after a step executes.</br>
+![img15.png](img%2Fimg15.png)
+The step execution listener interface defines a `beforeStep` method that is invoked prior to step execution and an `afterStep` method that is invoked once the step has been completed.
