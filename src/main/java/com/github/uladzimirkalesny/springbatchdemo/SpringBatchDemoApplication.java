@@ -1,8 +1,8 @@
 package com.github.uladzimirkalesny.springbatchdemo;
 
 import org.springframework.batch.core.Job;
-import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.Step;
+import org.springframework.batch.core.StepExecutionListener;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
@@ -157,6 +157,60 @@ public class SpringBatchDemoApplication {
                                 .on("INCORRECT").to(refundStep())
                     .from(decider())
                         .on("NOT_PRESENT").to(leaveAtDoorStep())
+                .end()
+                .build();
+    }
+
+    /**
+     * 3.3 StepExecutionListener
+     */
+    @Bean
+    public Step selectFlowersStep() {
+        return stepBuilderFactory.get("selectFlowersStep")
+                .tasklet((contribution, chunkContext) -> {
+                    System.out.println("Gathering flowers for order");
+                    return RepeatStatus.FINISHED;
+                })
+                .listener(selectFlowersListener())
+                .build();
+    }
+
+    /**
+     * This is the step that we're going to conditionally invoke pending the results of the x status provided by our StepExecutionListener.
+     */
+    @Bean
+    public Step removeThornsStep() {
+        return stepBuilderFactory.get("removeThornsStep")
+                .tasklet((contribution, chunkContext) -> {
+                    System.out.println("Remove thorns from roses");
+                    return RepeatStatus.FINISHED;
+                }).build();
+    }
+
+    @Bean
+    public Step arrangeFlowersStep() {
+        return stepBuilderFactory.get("arrangeFlowersStep")
+                .tasklet((contribution, chunkContext) -> {
+                    System.out.println("Arranging flowers to order");
+                    return RepeatStatus.FINISHED;
+                }).build();
+    }
+
+    @Bean
+    public StepExecutionListener selectFlowersListener() {
+        return new FlowersSelectionStepExecutionListener();
+    }
+
+    @Bean
+    public Job prepareFlowersJob() {
+        return jobBuilderFactory.get("prepareFlowersJob")
+                .start(selectFlowersStep())
+                    .on("TRIM_REQUIRED")
+                    .to(removeThornsStep())
+                    .next(arrangeFlowersStep())
+                .from(selectFlowersStep())
+                        .on("NO_TRIM_REQUIRED")
+                        .to(arrangeFlowersStep())
                 .end()
                 .build();
     }
