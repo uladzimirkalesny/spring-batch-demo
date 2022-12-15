@@ -417,3 +417,48 @@ The first status is the `Batch Status`. This status represents the overall statu
 `Batch Statuses` are fixed, they're specified in an enum, so the ones you see on the left are a fixed set of values and we cannot specify a custom BatchStatus. List of BatchStatuses: `ABANDONED, COMPLETED, FAILED, STARTED, STOPPED.`</br>
 The second status is the `Exit Status` and when we're talking about conditional job flow, this is the important one. It represents a literal status that is returned from a JobExecution or a StepExecution. The Exit Status is the one that is used by our on transition for the pattern match. So when performing a conditional flow, the Exit Status will be consulted for that pattern match, which will ultimately determine the flow the job will take. 
 The Exit Status, on the other hand, uses literal values and we can define our own custom ExitStatuses. This will be important when we look at conditional flows moving forward. List of ExitStatuses: `COMPLETED, EXECUTING, FAILED, STOPPED`, <b>Custom Status</b>
+
+##### Controlling flow with custom statuses[JobExecutionDecider]
+```shell
+git checkout 2.8-controlling-flow-with-custom-status
+```
+When more granular control over the conditional flow of the batch job is required developers can implement a `JobExecutionDecider`.</br>
+`JobExecutionDecider` provides better of the job flow by ExitStatus of the Step to be modified into a Custom Exit Status.</br>
+It's very useful when standard Exit Statuses not suffice.</br>
+Custom Status is required to determine where the job flow should proceed.
+JobExecutionDecider helps us to determine when this step needs to be executed. (for example, customer not at home)
+```java
+public class DeliveryDecider implements JobExecutionDecider {
+    @Override
+    public FlowExecutionStatus decide(JobExecution jobExecution, StepExecution stepExecution) {
+        var result = LocalDateTime.now().getHour() < 12 ? "PRESENT" : "NOT_PRESENT";
+        System.out.println("Decider result is: " + result);
+        return new FlowExecutionStatus(result);
+    }
+}
+```
+```java
+@Bean 
+public JobExecutionDecider decider() {
+    return new DeliveryDecider();
+}
+```
+```java
+@Bean
+public Job deliverPackageJob() {
+    return jobBuilderFactory
+        .get("deliverPackageJob")
+        .start(packageItemStep())
+        // conditional flow
+        .next(driveToAddressStep())
+            .on("FAILED") // equals statement
+            .to(storePackageStep()) // then statement
+        .from(driveToAddressStep())
+            .on("*").to(decider())
+                .on("PRESENT").to(givePackageToCustomerStep())
+            .from(decider())
+                .on("NOT_PRESENT").to(leaveAtDoorStep())
+        .end()
+        .build();
+}
+```
