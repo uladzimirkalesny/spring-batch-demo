@@ -698,3 +698,83 @@ Another reusability strategy, `nested jobs`. If we inspect these jobs you will n
 Instead of defining these steps in both places, it would be best just to execute Job Two after Step B in Job One. Using Spring Batch's job step, we can execute a job within a job, nesting one job inside of the other.
 ![img19.png](img%2Fimg19.png)
 This avoids repeating the same steps found in an existing job. So instead of executing Step C and D, we'll just use a job step after Step B in Job One to execute Job Two, then Job Two will run as a separate job once we have completed Step B in Job One. So these are two ways we can get some reuse within Spring Batch.
+
+##### 3.5 Reusing external flows
+Spring Batch provides a Flow Builder that allows us to externalize a sequence of steps into a flow that can be reused across different jobs.</br>
+![img20.png](img%2Fimg20.png)
+Currently within the deliver package job, we have a sequence of steps that deals with taking a particular item and getting it to a customer [Delivery Flow].</br>
+Go to do is externalize this section of our deliver package job and then within our prepare flowers job, we're going to leverage and execute that delivery flow as part of our batch processing. We'll also be able to keep that flow within our deliver package job achieving reusability across both jobs.
+![img21.png](img%2Fimg21.png)
+The deliverPackageJob contains sequence of steps that we would like to execute. So, pretty much everything after the package items step is going to be applicable to delivering the item whether it be flowers or shoes to the customer.
+```java
+@Bean
+public Job deliverPackageJob() {
+    return jobBuilderFactory
+        .get("deliverPackageJob")
+        .start(packageItemStep())
+        .next(driveToAddressStep())
+        .on("FAILED")
+        .fail()
+        .from(driveToAddressStep())
+        .on("*").to(decider())
+        .on("PRESENT").to(givePackageToCustomerStep())
+        .next(receiptDecider())
+        .on("CORRECT").to(thankCustomerStep())
+        .from(receiptDecider())
+        .on("INCORRECT").to(refundStep())
+        .from(decider())
+        .on("NOT_PRESENT").to(leaveAtDoorStep())
+        .end()
+        .build();
+}
+```
+Create a new `bean` and this bean is going to be of type `Flow`
+```java
+@Bean
+public Flow deliveryFlow() {
+    return new FlowBuilder<SimpleFlow>("deliveryFlow")
+        .start(driveToAddressStep())
+        .on("FAILED").fail()
+        .from(driveToAddressStep())
+        .on("*").to(decider())
+        .on("PRESENT").to(givePackageToCustomerStep())
+        .next(receiptDecider())
+        .on("CORRECT").to(thankCustomerStep())
+        .from(receiptDecider())
+        .on("INCORRECT").to(refundStep())
+        .from(decider())
+        .on("NOT_PRESENT").to(leaveAtDoorStep())
+        .build();
+}
+```
+Add the flow to prepareFlowersJob
+```java
+@Bean
+public Job prepareFlowersJob() {
+    return jobBuilderFactory.get("prepareFlowersJob")
+        .start(selectFlowersStep())
+        .on("TRIM_REQUIRED")
+        .to(removeThornsStep())
+        .next(arrangeFlowersStep())
+        .from(selectFlowersStep())
+        .on("NO_TRIM_REQUIRED")
+        .to(arrangeFlowersStep())
+        .from(arrangeFlowersStep())
+        .on("*").to(deliveryFlow())
+        .end()
+        .build();
+}
+```
+And update deliverPackageJob:
+```java
+@Bean
+public Job deliverPackageJob() {
+    return jobBuilderFactory
+        .get("deliverPackageJob")
+        .start(packageItemStep())
+        .on("*").to(deliveryFlow())
+        .end()
+        .build();
+}
+```
+Using flows introduces a lot of reusability in Spring Batch by allowing us to specify common sequences of steps in a single definition. If you find yourself copying and pasting from one job to another, it would be beneficial to introduce a flow into your jobs.
