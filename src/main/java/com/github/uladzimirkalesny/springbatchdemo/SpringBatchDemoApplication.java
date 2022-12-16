@@ -14,6 +14,7 @@ import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.task.SimpleAsyncTaskExecutor;
 
 /**
  * The @EnableBatchProcessing annotation adds autoconfiguration for Spring Batch to an application and automatically creates beans for a
@@ -146,8 +147,10 @@ public class SpringBatchDemoApplication {
         return jobBuilderFactory
                 .get("deliverPackageJob")
                 .start(packageItemStep())
-                .on("*").to(deliveryFlow())
-                .next(nestedBillingJobStep())
+                //this will cause the execution of our jobs to perform the next steps in parallel
+                .split(new SimpleAsyncTaskExecutor())
+                //define the flows that we would like to add to the split
+                .add(deliveryFlow(), billingFlow())
                 .end()
                 .build();
     }
@@ -251,6 +254,16 @@ public class SpringBatchDemoApplication {
     public Step nestedBillingJobStep() {
         return stepBuilderFactory.get("nestedBillingJobStep")
                 .job(billingJob())
+                .build();
+    }
+
+    /**
+     * Parallel Flows
+     */
+    @Bean
+    public Flow billingFlow() {
+        return new FlowBuilder<SimpleFlow>("billingFlow")
+                .start(sendInvoiceStep())
                 .build();
     }
 
