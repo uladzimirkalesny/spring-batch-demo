@@ -905,3 +905,33 @@ public Job deliverPackageJob() {
 ```
 So billing and delivery are occurring in parallel. And you can even see the different task executers and the threads associated with them.</br>
 So, using the `split`, we were able to deviate from sequential job execution. Its important to remember that splits are used with flows as opposed to steps or jobs. And using this feature within spring batch, you can simultaneously execute different job logic.
+
+### Reading Job Input
+##### 4.1 Chunk-Orineted processing
+Chunk-based steps use three components to complete their processing. These components are an `ItemReader`, an `ItemWriter`, and optionally, an `ItemProcessor`.</br>
+The generic logic of chunk-based processing is to read items from a data store using an ItemReader, transform the items using the ItemProcessor, and then we write chunks of the data to another data store within a transaction using the ItemWriter.</br>
+![img24.png](img%2Fimg24.png)
+When reading, processing, and writing the items, we perform these operations on subsets of the data referred to as `chunks`.
+Our step will continue reading, processing, and writing chunks until the items in the data store are exhausted.</br>
+When performing a chunk-based step, we typically provide a chunk size which determines how many items will be found within a chunk.</br>
+![img25.png](img%2Fimg25.png)
+When processing starts, the ItemReader will read the first item in the chunk and then pass it to the processor for processing. It then repeats this process for the next item within the chunk. Once we've met the chunk size, the entire chunk will be passed to the ItemWriter and then will be written to a data store within a transaction. Once the chunk has been written, this process will repeat itself, will read the first item in the chunk, then process it, then read the second item the chunk and process that one, and then we're going to take the entire chunk and use the ItemWriter to write it to a data store.
+
+<b>ItemReader</b></br>
+Chunked-based processing requires data to be read as items into a batch job for processing. To achieve this, we use an `ItemReader`.</br>
+Spring Batch provides an `ItemReader interface` with a single method named `read`. Implementations of the ItemReader interface retrieve data from a data store one item at a time for processing within the batch job. The framework provides several out-of-the-box implementations for reading from common data stores such as databases, files, and message queues.</br>
+This alleviates the need for developers to write logic focused on pulling data from these sources for a batch job. Instead, we just configure one of the out-of-the-box ItemReaders. Let's take a look at some of the ItemReaders that the framework provides. 
+<ul>
+<li>KafkaItemReader</li>
+<li>FlatFileItemReader</li>
+<li>HibernateCursorItemReader</li>
+<li>HibernatePaginationItemReader</li>
+<li>JdbcCursorItemReader</li>
+<li>JdbcPagingItemReader</li>
+<li>JpaPagingItemReader</li>
+<li>MongoItemReader</li>
+<li>StaxEventItemReader</li>
+<li>JsonItemReader</li>
+</ul>
+Here's a list of those ItemReaders that are available within the framework that we can use to consume items from different data sources. When leveraging these ItemReaders, we'll need to provide some specific configuration for each reader that will instruct the reader how to consume the items from the data store.</br>
+Typically, we'll wind up building POJOs in our object model that correspond with those items read by the reader. Those POJOs will be used for the downstream processing within our jobs.
