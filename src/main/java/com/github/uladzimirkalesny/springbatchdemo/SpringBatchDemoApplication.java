@@ -6,13 +6,21 @@ import org.springframework.batch.core.configuration.annotation.EnableBatchProces
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.file.FlatFileItemReader;
+import org.springframework.batch.item.file.mapping.DefaultLineMapper;
+import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.io.ClassPathResource;
 
 @EnableBatchProcessing
 @SpringBootApplication
 public class SpringBatchDemoApplication {
+
+    private static final String[] CSV_COLUMN_NAMES = {
+            "order_id", "first_name", "last_name", "email", "cost", "item_id", "item_name", "ship_date"
+    };
 
     private final JobBuilderFactory jobBuilderFactory;
     private final StepBuilderFactory stepBuilderFactory;
@@ -24,14 +32,26 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
-    public ItemReader<String> itemReader() {
-        return new CustomChunkBasedItemReader();
+    public ItemReader<Order> itemReader() {
+        DelimitedLineTokenizer delimitedLineTokenizer = new DelimitedLineTokenizer(); // "," comma as delimiter
+        delimitedLineTokenizer.setNames(CSV_COLUMN_NAMES); // headers from csv file
+
+        DefaultLineMapper<Order> defaultLineMapper = new DefaultLineMapper<>();
+        defaultLineMapper.setLineTokenizer(delimitedLineTokenizer);
+        defaultLineMapper.setFieldSetMapper(new OrderFieldSetMapper());
+
+        FlatFileItemReader<Order> flatFileItemReader = new FlatFileItemReader<>();
+        flatFileItemReader.setLinesToSkip(1); // skip headers
+        flatFileItemReader.setResource(new ClassPathResource("orders.csv"));
+        flatFileItemReader.setLineMapper(defaultLineMapper);
+
+        return flatFileItemReader;
     }
 
     @Bean
-    public Step chunkBasedStep() {
+    public Step readFlatFileStep() {
         return this.stepBuilderFactory.get("chunkBasedStep")
-                .<String, String>chunk(3) // chunk size 3
+                .<Order, Order>chunk(2)
                 .reader(itemReader())
                 .writer(items -> {
                     System.out.printf("Received list of size %d%n", items.size());
@@ -43,7 +63,7 @@ public class SpringBatchDemoApplication {
     @Bean
     public Job job() {
         return this.jobBuilderFactory.get("job")
-                .start(chunkBasedStep())
+                .start(readFlatFileStep())
                 .build();
     }
 

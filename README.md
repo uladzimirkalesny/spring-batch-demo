@@ -960,3 +960,103 @@ Received list of size 2
  [COMPLETED] in 390ms
 
 ```
+##### 4.4 Reading Flat Files
+Batch jobs commonly process or produce flat file support for them out of the box in the Spring Batch.
+```java
+public class Order {
+    private Long orderId;
+    private String firstName;
+    private String lastName;
+    private String email;
+    private BigDecimal cost;
+    private String itemId;
+    private String itemName;
+    private Date shipDate;
+    // getters, setters, toString
+}
+```
+```java
+public class OrderFieldSetMapper implements FieldSetMapper<Order> {
+    @Override
+    public Order mapFieldSet(FieldSet fieldSet) throws BindException {
+        Order order = new Order();
+        order.setOrderId(fieldSet.readLong("order_id"));
+        order.setFirstName(fieldSet.readString("first_name"));
+        order.setLastName(fieldSet.readString("last_name"));
+        order.setEmail(fieldSet.readString("email"));
+        order.setCost(fieldSet.readBigDecimal("cost"));
+        order.setItemId(fieldSet.readString("item_id"));
+        order.setItemName(fieldSet.readString("item_name"));
+        order.setShipDate(fieldSet.readDate("ship_date"));
+
+        return order;
+    }
+}
+```
+```java
+@EnableBatchProcessing
+@SpringBootApplication
+public class SpringBatchDemoApplication {
+
+    private static final String[] CSV_COLUMN_NAMES = {
+            "order_id", "first_name", "last_name", "email", "cost", "item_id", "item_name", "ship_date"
+    };
+
+    private final JobBuilderFactory jobBuilderFactory;
+    private final StepBuilderFactory stepBuilderFactory;
+
+    public SpringBatchDemoApplication(JobBuilderFactory jobBuilderFactory,
+                                      StepBuilderFactory stepBuilderFactory) {
+        this.jobBuilderFactory = jobBuilderFactory;
+        this.stepBuilderFactory = stepBuilderFactory;
+    }
+
+    @Bean
+    public ItemReader<Order> itemReader() {
+        DelimitedLineTokenizer delimitedLineTokenizer = new DelimitedLineTokenizer(); // "," comma as delimiter
+        delimitedLineTokenizer.setNames(CSV_COLUMN_NAMES); // headers from csv file
+
+        DefaultLineMapper<Order> defaultLineMapper = new DefaultLineMapper<>();
+        defaultLineMapper.setLineTokenizer(delimitedLineTokenizer);
+        defaultLineMapper.setFieldSetMapper(new OrderFieldSetMapper());
+
+        FlatFileItemReader<Order> flatFileItemReader = new FlatFileItemReader<>();
+        flatFileItemReader.setLinesToSkip(1); // skip headers
+        flatFileItemReader.setResource(new ClassPathResource("orders.csv"));
+        flatFileItemReader.setLineMapper(defaultLineMapper);
+
+        return flatFileItemReader;
+    }
+
+    @Bean
+    public Step readFlatFileStep() {
+        return this.stepBuilderFactory.get("chunkBasedStep")
+                .<Order, Order>chunk(2)
+                .reader(itemReader())
+                .writer(items -> {
+                    System.out.printf("Received list of size %d%n", items.size());
+                    items.forEach(System.out::println);
+                })
+                .build();
+    }
+
+    @Bean
+    public Job job() {
+        return this.jobBuilderFactory.get("job")
+                .start(readFlatFileStep())
+                .build();
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBatchDemoApplication.class, args);
+    }
+
+}
+```
+orders.csv from resources (ClasPathResource)
+```
+order_id,first_name,last_name,email,cost,item_id,item_name,ship_date
+1,John,Doe,john.doe@gmail.com,1,1,milk,2022-12-16
+2,Anna,Doe,anna.doe@gmail.com,2,2,potato,2022-12-15
+3,Brad,Doe,brad.doe@gmail.com,3,3,beer,2022-12-14
+```
