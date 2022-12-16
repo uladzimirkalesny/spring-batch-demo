@@ -871,3 +871,37 @@ public Job deliverPackageJob() {
 Important part here, it is executing our billing job as a separate job. So if we looked into the metadata in the job repository you're going to see this as a separate job execution.</br>
 So this is another option you have when you want to achieve some re-usability within Spring Batch.</br>
 When you're deciding between an external flow and a job step, I would recommend leaning towards an `external flow` <b>because it's easier to manage then chaining these jobs together</b>.
+
+##### 3.7 Parallel Flows
+```shell
+git checkout 3.7-parallel-flows
+```
+When building a batch job, typically we execute steps in sequence: one step at a time. There can be scenarios when two steps must execute in parallel.</br>
+Spring Batch supports this functionality by providing `splits`. A `split` allows us to execute two flows simultaneously using multiple threads. This technique can be used to improve the performance of a job. In order to take a look at a split, we're going to be adding a Billing Flow. So we'll modify our Billing Job and turn it into a flow. And then within our Deliver Package Job, we're going to execute the Delivery Flow and the Billing Flow in parallel using a split.</br>
+![img23.png](img%2Fimg23.png)
+In order to work with a split, we'll need to build another flow.
+```java
+@Bean
+public Flow billingFlow() {
+    return new FlowBuilder<SimpleFlow>("billingFlow")
+        .start(sendInvoiceStep())
+        .build();
+}
+```
+Update deliverPackageJob:
+```java
+@Bean
+public Job deliverPackageJob() {
+    return jobBuilderFactory
+        .get("deliverPackageJob")
+        .start(packageItemStep())
+        //this will cause the execution of our jobs to perform the next steps in parallel
+        .split(new SimpleAsyncTaskExecutor())
+        //define the flows that we would like to add to the split
+        .add(deliveryFlow(), billingFlow())
+        .end()
+        .build();
+}
+```
+So billing and delivery are occurring in parallel. And you can even see the different task executers and the threads associated with them.</br>
+So, using the `split`, we were able to deviate from sequential job execution. Its important to remember that splits are used with flows as opposed to steps or jobs. And using this feature within spring batch, you can simultaneously execute different job logic.
