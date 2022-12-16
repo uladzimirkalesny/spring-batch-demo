@@ -727,3 +727,14 @@ Arranging flowers to order
 2022-12-16 00:24:09.247  INFO 29316 --- [           main] o.s.b.c.l.support.SimpleJobLauncher      : Job: [FlowJob: [name=prepareFlowersJob]] completed with the following parameters: [{type=roses}] an
 d the following status: [COMPLETED] in 238ms
 ```
+##### 3.4 Reusability in batch jobs
+When building batch jobs, there may be consecutive sequences of steps that need to appear in every job you build.</br>
+When this situation occurs it is important to remember the do not repeat yourself principle. To help us adhere to this principle, Spring Batch provides us with two strategies to reuse jobs and common step sequences.</br>
+If we look at these two jobs, we can see they are not exactly the same, but there is some repetition in the flow because both jobs execute Step B and Step C in sequence.
+![img17.png](img%2Fimg17.png)
+This part of the flow can be externalized into a separate flow and defined as a Bean using Spring Batch's Flow Builder. Once an external flow is constructed, both jobs can execute the flow using a flow step within their configuration allowing the same flow to be reused in multiple jobs. Using `external flows` is a better approach in this scenario because if Step B needed to change, the changes could be made in one place, however both jobs would incorporate the modified logic.</br>
+Another reusability strategy, `nested jobs`. If we inspect these jobs you will notice that the final two steps in Job One are the same steps found in Job Two.
+![img18.png](img%2Fimg18.png)
+Instead of defining these steps in both places, it would be best just to execute Job Two after Step B in Job One. Using Spring Batch's job step, we can execute a job within a job, nesting one job inside of the other.
+![img19.png](img%2Fimg19.png)
+This avoids repeating the same steps found in an existing job. So instead of executing Step C and D, we'll just use a job step after Step B in Job One to execute Job Two, then Job Two will run as a separate job once we have completed Step B in Job One. So these are two ways we can get some reuse within Spring Batch.
