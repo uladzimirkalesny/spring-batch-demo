@@ -886,3 +886,77 @@ This alleviates the need for developers to write logic focused on pulling data f
 </ul>
 Here's a list of those ItemReaders that are available within the framework that we can use to consume items from different data sources. When leveraging these ItemReaders, we'll need to provide some specific configuration for each reader that will instruct the reader how to consume the items from the data store.</br>
 Typically, we'll wind up building POJOs in our object model that correspond with those items read by the reader. Those POJOs will be used for the downstream processing within our jobs.
+
+##### 4.3 Configuring Chunk-oriented steps
+Create our first chunk-based step that contains a very simple item reader and item writer implementation:
+```java
+@Bean
+public ItemReader<String> itemReader() {
+    return new CustomChunkBasedItemReader();
+}
+
+@Bean
+public Step chunkBasedStep() {
+    return this.stepBuilderFactory.get("chunkBasedStep")
+        .<String, String>chunk(3) // chunk size 3
+        .reader(itemReader())
+        .writer(items -> {
+            System.out.printf("Received list of size %d%n", items.size());
+            items.forEach(System.out::println);
+        })
+        .build();
+}
+@Bean
+public Job job() {
+    return this.jobBuilderFactory.get("job")
+        .start(chunkBasedStep())
+        .build();
+}
+```
+ItemReader implementation:
+```java
+public class CustomChunkBasedItemReader implements ItemReader<String> {
+
+    private final List<String> items;
+    private final Iterator<String> iterator;
+
+    public CustomChunkBasedItemReader() {
+        this.items = IntStream.rangeClosed(1, 5)
+                .mapToObj(Integer::toString)
+                .toList();
+        this.iterator = this.items.iterator();
+    }
+
+    /**
+     * This is method is going to be called over and over again
+     * (once per each item found in the chunks that are read from data set when the job is processing),
+     * basically until it returns null signaling to the framework
+     * that it has exhausted the items from the datasource.
+     */
+    @Override
+    public String read() {
+        return iterator.hasNext() ? iterator.next() : null;
+    }
+
+}
+```
+```shell
+call mvn clean package -DskipTests
+call java -jar ./target/spring-batch-demo-1.0.0.jar
+```
+Console Output:
+```
+2022-12-16 16:46:51.985  INFO 3748 --- [           main] o.s.b.c.l.support.SimpleJobLauncher      : Job: [SimpleJob: [name=job]] launched with the following parameters: [{}]
+2022-12-16 16:46:52.230  INFO 3748 --- [           main] o.s.batch.core.job.SimpleStepHandler     : Executing step: [chunkBasedStep]
+Received list of size 3
+1
+2
+3
+Received list of size 2
+4
+5
+2022-12-16 16:46:52.386  INFO 3748 --- [           main] o.s.batch.core.step.AbstractStep         : Step: [chunkBasedStep] executed in 155ms
+2022-12-16 16:46:52.426  INFO 3748 --- [           main] o.s.b.c.l.support.SimpleJobLauncher      : Job: [SimpleJob: [name=job]] completed with the following parameters: [{}] and the following status:
+ [COMPLETED] in 390ms
+
+```
