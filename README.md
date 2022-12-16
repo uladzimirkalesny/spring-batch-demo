@@ -778,3 +778,50 @@ public Job deliverPackageJob() {
 }
 ```
 Using flows introduces a lot of reusability in Spring Batch by allowing us to specify common sequences of steps in a single definition. If you find yourself copying and pasting from one job to another, it would be beneficial to introduce a flow into your jobs.
+
+##### 3.6 Nesting jobs
+The job step is another strategy that Spring Batch provides to support re-usability. A job step lets us nest a job within a step and then execute that step from another job. This is a little different then defining a flow because instead of executing the sequence of steps directly inside of the job the job step will be executed as a separate job.</br>
+![img22.png](img%2Fimg22.png)
+Create a billing job that has a single invoice step and go to incorporate that as a nested job within our deliver package job. So we're going to package the item, execute our delivery flow and then as a separate job, we will execute our billing job.
+```java
+@Bean
+public Job billingJob() {
+    return jobBuilderFactory.get("billingJob")
+        .start(sendInvoiceStep())
+        .build();
+}
+
+@Bean
+public Step sendInvoiceStep() {
+    return stepBuilderFactory.get("sendInvoiceStep")
+        .tasklet((contribution, chunkContext) -> {
+            System.out.println("Invoice is sent to the customer");
+            return RepeatStatus.FINISHED;
+        }).build();
+}
+```
+In order to nest the billing job within another job we'll need to create a job step. And job steps are defined as beans and the bean is going to be of type step.
+```java
+@Bean
+public Step nestedBillingJobStep() {
+    return stepBuilderFactory.get("nestedBillingJobStep")
+        .job(billingJob())
+        .build();
+}
+```
+Take our job step and nest it within another job.
+```java
+@Bean
+public Job deliverPackageJob() {
+    return jobBuilderFactory
+        .get("deliverPackageJob")
+        .start(packageItemStep())
+        .on("*").to(deliveryFlow())
+        .next(nestedBillingJobStep())
+        .end()
+        .build();
+}
+```
+Important part here, it is executing our billing job as a separate job. So if we looked into the metadata in the job repository you're going to see this as a separate job execution.</br>
+So this is another option you have when you want to achieve some re-usability within Spring Batch.</br>
+When you're deciding between an external flow and a job step, I would recommend leaning towards an `external flow` <b>because it's easier to manage then chaining these jobs together</b>.

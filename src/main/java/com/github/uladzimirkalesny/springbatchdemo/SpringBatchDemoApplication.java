@@ -147,6 +147,7 @@ public class SpringBatchDemoApplication {
                 .get("deliverPackageJob")
                 .start(packageItemStep())
                 .on("*").to(deliveryFlow())
+                .next(nestedBillingJobStep())
                 .end()
                 .build();
     }
@@ -224,6 +225,32 @@ public class SpringBatchDemoApplication {
                 .on("INCORRECT").to(refundStep())
                 .from(decider())
                 .on("NOT_PRESENT").to(leaveAtDoorStep())
+                .build();
+    }
+
+    /**
+     * 3.5 Nesting jobs
+     */
+    @Bean
+    public Job billingJob() {
+        return jobBuilderFactory.get("billingJob")
+                .start(sendInvoiceStep())
+                .build();
+    }
+
+    @Bean
+    public Step sendInvoiceStep() {
+        return stepBuilderFactory.get("sendInvoiceStep")
+                .tasklet((contribution, chunkContext) -> {
+                    System.out.println("Invoice is sent to the customer");
+                    return RepeatStatus.FINISHED;
+                }).build();
+    }
+
+    @Bean
+    public Step nestedBillingJobStep() {
+        return stepBuilderFactory.get("nestedBillingJobStep")
+                .job(billingJob())
                 .build();
     }
 
