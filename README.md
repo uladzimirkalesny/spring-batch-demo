@@ -1060,3 +1060,114 @@ order_id,first_name,last_name,email,cost,item_id,item_name,ship_date
 2,Anna,Doe,anna.doe@gmail.com,2,2,potato,2022-12-15
 3,Brad,Doe,brad.doe@gmail.com,3,3,beer,2022-12-14
 ```
+##### 4.5 Reading From Database Single Thread
+Within Spring Batch, there are several out of the box item readers that make it easy to read from a relational database.</br>
+These out of the box implementations include item readers for JDBC cursors, hibernates, stored procedures and JDBC paging.</br>
+`JdbcCrsorItemReader` which is suitable for reading data in single-threaded scenarios.</br>
+Update `application.yml` file:
+```yaml
+spring:
+  sql:
+    init:
+      mode: always
+      data-locations: classpath:orders.sql
+```
+Prepare a DDL sql script to generate an order table and then the insert statements to populate that table
+```sql
+CREATE TABLE orders
+(
+    order_id   BIGINT,
+    first_name TEXT,
+    last_name  TEXT,
+    email      TEXT,
+    cost       TEXT,
+    item_id    TEXT,
+    item_name  TEXT,
+    ship_date  DATE
+);
+
+INSERT INTO orders (order_id, first_name, last_name, email, cost, item_id, item_name, ship_date)
+VALUES (1, 'John', 'Doe', 'john.doe@gmail.com', '1', '1', 'milk', '2022-12-16');
+INSERT INTO orders (order_id, first_name, last_name, email, cost, item_id, item_name, ship_date)
+VALUES (2, 'Anna', 'Doe', 'anna.doe@gmail.com', '1', '2', 'potato', '2022-12-15');
+INSERT INTO orders (order_id, first_name, last_name, email, cost, item_id, item_name, ship_date)
+VALUES (3, 'Brad', 'Doe', 'brad.doe@gmail.com', '1', '3', 'beer', '2022-12-14');
+```
+Update Class
+```java
+@EnableBatchProcessing
+@SpringBootApplication
+public class SpringBatchDemoApplication {
+
+    /**
+     * If we do not specify an ORDER BY clause, the database does not guarantee the order the data will be provided. 
+     * This can cause issues if we do need to restart our job with Spring Batch. 
+     * So you want to be sure always to specify an order by clause within your SQL statements.
+     */
+    private static final String ORDER_SQL = "SELECT * FROM orders ORDER BY order_id";
+
+    private final JobBuilderFactory jobBuilderFactory;
+    private final StepBuilderFactory stepBuilderFactory;
+    private final DataSource dataSource;
+
+    public SpringBatchDemoApplication(JobBuilderFactory jobBuilderFactory,
+                                      StepBuilderFactory stepBuilderFactory,
+                                      DataSource dataSource) {
+        this.jobBuilderFactory = jobBuilderFactory;
+        this.stepBuilderFactory = stepBuilderFactory;
+        this.dataSource = dataSource;
+    }
+
+    @Bean
+    public ItemReader<Order> itemReader() {
+        return new JdbcCursorItemReaderBuilder<Order>()
+                .name("jdbcCursorItemReader")
+                .dataSource(dataSource)
+                .sql(ORDER_SQL)
+                .rowMapper(orderRowMapper())
+                .build();
+    }
+
+    private RowMapper<Order> orderRowMapper() {
+        return (rs, rowNum) -> {
+            Order order = new Order();
+            order.setOrderId(rs.getLong("order_id"));
+            order.setFirstName(rs.getString("first_name"));
+            order.setLastName(rs.getString("last_name"));
+            order.setEmail(rs.getString("email"));
+            order.setCost(rs.getBigDecimal("cost"));
+            order.setItemId(rs.getString("item_id"));
+            order.setItemName(rs.getString("item_name"));
+            order.setShipDate(rs.getDate("ship_date"));
+
+            return order;
+        };
+    }
+
+    @Bean
+    public Step readFlatFileStep() {
+        return this.stepBuilderFactory.get("chunkBasedStep")
+                .<Order, Order>chunk(2)
+                .reader(itemReader())
+                .writer(items -> {
+                    System.out.printf("Received list of size %d%n", items.size());
+                    items.forEach(System.out::println);
+                })
+                .build();
+    }
+
+    @Bean
+    public Job job() {
+        return this.jobBuilderFactory.get("job")
+                .start(readFlatFileStep())
+                .build();
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBatchDemoApplication.class, args);
+    }
+
+}
+```
+The `JdbcCursorItemReader` an effective way to read from a database, however, it has one big drawback, it's not thread-safe. So if you plan to execute your job with multiple threads, there's a different item reader implementation that we'll need to use, it's the `JdbcPagingItemReader`.</br>
+However, if you're in a single-threaded scenario, you can consider using the `JdbcCursorItemReader`.
