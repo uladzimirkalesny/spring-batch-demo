@@ -7,7 +7,6 @@ import org.springframework.batch.core.configuration.annotation.JobBuilderFactory
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
-import org.springframework.batch.item.database.ItemPreparedStatementSetter;
 import org.springframework.batch.item.database.PagingQueryProvider;
 import org.springframework.batch.item.database.builder.JdbcBatchItemWriterBuilder;
 import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
@@ -18,7 +17,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.RowMapper;
 
 import javax.sql.DataSource;
-import java.sql.Date;
 
 @EnableBatchProcessing
 @SpringBootApplication
@@ -26,7 +24,7 @@ public class SpringBatchDemoApplication {
 
     public static String INSERT_ORDER_SQL =
             "INSERT INTO orders_output(order_id, first_name, last_name, email, item_id, item_name, cost, ship_date)" +
-                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?)";
+                    "VALUES(:orderId, :firstName, :lastName, :email, :itemId, :itemName, :cost, :shipDate)";
 
     private final JobBuilderFactory jobBuilderFactory;
     private final StepBuilderFactory stepBuilderFactory;
@@ -89,21 +87,8 @@ public class SpringBatchDemoApplication {
         return new JdbcBatchItemWriterBuilder<Order>()
                 .dataSource(dataSource)
                 .sql(INSERT_ORDER_SQL)
-                .itemPreparedStatementSetter(fillPreparedStatement())
+                .beanMapped()
                 .build();
-    }
-
-    private ItemPreparedStatementSetter<Order> fillPreparedStatement() {
-        return (order, ps) -> {
-            ps.setLong(1, order.getOrderId());
-            ps.setString(2, order.getFirstName());
-            ps.setString(3, order.getLastName());
-            ps.setString(4, order.getEmail());
-            ps.setString(5, order.getItemId());
-            ps.setString(6, order.getItemName());
-            ps.setBigDecimal(7, order.getCost());
-            ps.setDate(8, new Date(order.getShipDate().getTime()));
-        };
     }
 
     @Bean

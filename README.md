@@ -1552,6 +1552,28 @@ CREATE TABLE orders_output
 ```
 `JdbcBatchItemWriter` provides us with a convenient way to write data from a job to a relational database. The rights are managed by spring batch and executed within a transaction. This provides us with some fault tolerance in the case of a failure. One of the weaknesses of this approach is the fact that we're using the ordinal position when we set these parameters. It's very easy to get the order off and to incorrectly set the parameters within that insert statement.
 
+##### 5.4 Writing to a Database with named parameters
+When using the `JdbcBatchItemWriter` it possible to use Springs `JdbcTemplate`, which uses name parameters to map values to the SQL statement. Named parameters help prevent issues that pop up with ordinal values in prepared statements. So it's a much preferred approach.</br>
+Replace these traditional question marks used in a prepared statement with a named parameter, i.e. need to match the names of the fields found within our order POJO.
+```java
+public static String INSERT_ORDER_SQL =
+            "INSERT INTO orders_output(order_id, first_name, last_name, email, item_id, item_name, cost, ship_date)" +
+                    "VALUES(:orderId, :firstName, :lastName, :email, :itemId, :itemName, :cost, :shipDate)";
+```
+No longer using the `itemPreparedStatementSetter()` method.</br>
+Instead need to use `beanMapped()` method which helps to register new component. It causes a bean property `ItemSqlParameterSourceProvider` to be registered. It's going to use the value of that field to set the parameter within our insert statement. So, it's a lot easier than using those ordinal positions.</br>
+```java
+@Bean
+public ItemWriter<Order> jdbcBatchItemWriterBuilder() {
+    return new JdbcBatchItemWriterBuilder<Order>()
+        .dataSource(dataSource)
+        .sql(INSERT_ORDER_SQL)
+        .beanMapped()
+        .build();
+}
+```
+It's just using a named parameter as well as the beaned mapped strategy, it's much more efficient and much less error-prone.</br>
+
 # TODO
 ```commandline
 docker exec -it postgresql psql -U postgres -d job_repository
