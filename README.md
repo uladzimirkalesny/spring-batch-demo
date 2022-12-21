@@ -1229,3 +1229,99 @@ public class SpringBatchDemoApplication {
 ```
 The `JdbcCursorItemReader` an effective way to read from a database, however, it has one big drawback, it's not thread-safe. So if you plan to execute your job with multiple threads, there's a different item reader implementation that we'll need to use, it's the `JdbcPagingItemReader`.</br>
 However, if you're in a single-threaded scenario, you can consider using the `JdbcCursorItemReader`.
+
+##### 4.6 Reading From Database Multi Thread
+```shell
+git checkout 4.6-reading-from-database-multi-thread
+```
+`JdbcPagingItemReader` is another ItemReader implementation that is necessary when working in multi-threaded scenarios with a relational database.</br>
+```java
+@EnableBatchProcessing
+@SpringBootApplication
+public class SpringBatchDemoApplication {
+
+    private static final String ORDER_SQL = "SELECT * FROM orders ORDER BY order_id";
+
+    private final JobBuilderFactory jobBuilderFactory;
+    private final StepBuilderFactory stepBuilderFactory;
+    private final DataSource dataSource;
+
+    public SpringBatchDemoApplication(JobBuilderFactory jobBuilderFactory,
+                                      StepBuilderFactory stepBuilderFactory,
+                                      DataSource dataSource) {
+        this.jobBuilderFactory = jobBuilderFactory;
+        this.stepBuilderFactory = stepBuilderFactory;
+        this.dataSource = dataSource;
+    }
+
+    @Bean
+    public PagingQueryProvider queryProvider() throws Exception {
+        SqlPagingQueryProviderFactoryBean factoryBean = new SqlPagingQueryProviderFactoryBean();
+        factoryBean.setSelectClause("SELECT order_id, first_name, last_name, email, cost, item_id, item_name, ship_date");
+        factoryBean.setFromClause("FROM orders");
+        factoryBean.setSortKey("order_id");
+        factoryBean.setDataSource(dataSource);
+
+        return factoryBean.getObject();
+    }
+
+    /**
+     * <ul>
+     * <li>queryProvider using in order to construct our SQL statement</li>
+     * <li>pageSize(2) specify how many items are in a page (amount of items). It's important that our page size also matches our chunk size.</li>
+     * </ul>
+     */
+    @Bean
+    public ItemReader<Order> itemReader() throws Exception {
+        return new JdbcPagingItemReaderBuilder<Order>()
+                .name("jdbcPagingItemReaderBuilder")
+                .dataSource(dataSource)
+                .queryProvider(queryProvider())
+                .pageSize(2)
+                .rowMapper(orderRowMapper())
+                .build();
+    }
+
+    private RowMapper<Order> orderRowMapper() {
+        return (rs, rowNum) -> {
+            Order order = new Order();
+            order.setOrderId(rs.getLong("order_id"));
+            order.setFirstName(rs.getString("first_name"));
+            order.setLastName(rs.getString("last_name"));
+            order.setEmail(rs.getString("email"));
+            order.setCost(rs.getBigDecimal("cost"));
+            order.setItemId(rs.getString("item_id"));
+            order.setItemName(rs.getString("item_name"));
+            order.setShipDate(rs.getDate("ship_date"));
+
+            return order;
+        };
+    }
+
+    @Bean
+    public Step readFlatFileStep() throws Exception {
+        return this.stepBuilderFactory.get("readFlatFileStep")
+                .<Order, Order>chunk(2)
+                .reader(itemReader())
+                .writer(items -> {
+                    System.out.printf("Received list of size %d%n", items.size());
+                    items.forEach(System.out::println);
+                })
+                .build();
+    }
+
+    @Bean
+    public Job job() throws Exception {
+        return this.jobBuilderFactory.get("job")
+                .start(readFlatFileStep())
+                .build();
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBatchDemoApplication.class, args);
+    }
+
+}
+```
+The key point about this, it's `thread safe` so we can use this in a multi-threaded scenario.</br>
+One interesting thing to point out about this item reader is the complexity of paging within a database. It typically varies by your database implementation. Within this implementation, it is intelligent enough to detect what database you're using, and it will construct the appropriate paging query in order for the item reader to appropriately pull data from the data source. So this is one of those benefits you get out of the box from Spring Batch and it's item reader implementations.
