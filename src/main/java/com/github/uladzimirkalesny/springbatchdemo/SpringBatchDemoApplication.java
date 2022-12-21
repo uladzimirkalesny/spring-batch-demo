@@ -6,7 +6,9 @@ import org.springframework.batch.core.configuration.annotation.EnableBatchProces
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.item.ItemReader;
-import org.springframework.batch.item.database.builder.JdbcCursorItemReaderBuilder;
+import org.springframework.batch.item.database.PagingQueryProvider;
+import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
+import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
@@ -18,11 +20,6 @@ import javax.sql.DataSource;
 @SpringBootApplication
 public class SpringBatchDemoApplication {
 
-    /**
-     * If we do not specify an ORDER BY clause, the database does not guarantee the order the data will be provided.
-     * This can cause issues if we do need to restart our job with Spring Batch.
-     * So you want to be sure always to specify an order by clause within your SQL statements.
-     */
     private static final String ORDER_SQL = "SELECT * FROM orders ORDER BY order_id";
 
     private final JobBuilderFactory jobBuilderFactory;
@@ -38,11 +35,29 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
-    public ItemReader<Order> itemReader() {
-        return new JdbcCursorItemReaderBuilder<Order>()
-                .name("jdbcCursorItemReader")
+    public PagingQueryProvider queryProvider() throws Exception {
+        SqlPagingQueryProviderFactoryBean factoryBean = new SqlPagingQueryProviderFactoryBean();
+        factoryBean.setSelectClause("SELECT order_id, first_name, last_name, email, cost, item_id, item_name, ship_date");
+        factoryBean.setFromClause("FROM orders");
+        factoryBean.setSortKey("order_id");
+        factoryBean.setDataSource(dataSource);
+
+        return factoryBean.getObject();
+    }
+
+    /**
+     * <ul>
+     * <li>queryProvider using in order to construct our SQL statement</li>
+     * <li>pageSize(2) specify how many items are in a page (amount of items). It's important that our page size also matches our chunk size.</li>
+     * </ul>
+     */
+    @Bean
+    public ItemReader<Order> itemReader() throws Exception {
+        return new JdbcPagingItemReaderBuilder<Order>()
+                .name("jdbcPagingItemReaderBuilder")
                 .dataSource(dataSource)
-                .sql(ORDER_SQL)
+                .queryProvider(queryProvider())
+                .pageSize(2)
                 .rowMapper(orderRowMapper())
                 .build();
     }
@@ -64,8 +79,8 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
-    public Step readFlatFileStep() {
-        return this.stepBuilderFactory.get("chunkBasedStep")
+    public Step readFlatFileStep() throws Exception {
+        return this.stepBuilderFactory.get("readFlatFileStep")
                 .<Order, Order>chunk(2)
                 .reader(itemReader())
                 .writer(items -> {
@@ -76,7 +91,7 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
-    public Job job() {
+    public Job job() throws Exception {
         return this.jobBuilderFactory.get("job")
                 .start(readFlatFileStep())
                 .build();
