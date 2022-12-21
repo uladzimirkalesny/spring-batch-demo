@@ -6,12 +6,17 @@ import org.springframework.batch.core.configuration.annotation.EnableBatchProces
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
 import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.PagingQueryProvider;
 import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
 import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
+import org.springframework.batch.item.file.FlatFileItemWriter;
+import org.springframework.batch.item.file.transform.BeanWrapperFieldExtractor;
+import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.RowMapper;
 
 import javax.sql.DataSource;
@@ -20,7 +25,7 @@ import javax.sql.DataSource;
 @SpringBootApplication
 public class SpringBatchDemoApplication {
 
-    private static final String ORDER_SQL = "SELECT * FROM orders ORDER BY order_id";
+    public static String[] NAMES = {"orderId", "firstName", "lastName", "email", "cost", "itemId", "itemName", "shipDate"};
 
     private final JobBuilderFactory jobBuilderFactory;
     private final StepBuilderFactory stepBuilderFactory;
@@ -79,14 +84,27 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
+    public ItemWriter<Order> flatFileItemWriter() {
+        BeanWrapperFieldExtractor<Order> beanWrapperFieldExtractor = new BeanWrapperFieldExtractor<>();
+        beanWrapperFieldExtractor.setNames(NAMES);
+
+        DelimitedLineAggregator<Order> delimitedLineAggregator = new DelimitedLineAggregator<>();
+        delimitedLineAggregator.setDelimiter(",");
+        delimitedLineAggregator.setFieldExtractor(beanWrapperFieldExtractor);
+
+        FlatFileItemWriter<Order> flatFileItemWriter = new FlatFileItemWriter<>();
+        flatFileItemWriter.setResource(new FileSystemResource("/Users/Uladzimir_Kalesny/Downloads/orders.csv"));
+        flatFileItemWriter.setLineAggregator(delimitedLineAggregator);
+
+        return flatFileItemWriter;
+    }
+
+    @Bean
     public Step readFlatFileStep() throws Exception {
         return this.stepBuilderFactory.get("readFlatFileStep")
                 .<Order, Order>chunk(2)
                 .reader(itemReader())
-                .writer(items -> {
-                    System.out.printf("Received list of size %d%n", items.size());
-                    items.forEach(System.out::println);
-                })
+                .writer(flatFileItemWriter())
                 .build();
     }
 
