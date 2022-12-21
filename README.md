@@ -1644,6 +1644,131 @@ public ItemWriter<Order> jdbcBatchItemWriterBuilder() {
 ```
 It's just using a named parameter as well as the beaned mapped strategy, it's much more efficient and much less error-prone.</br>
 
+##### 5.6 Writing a JSON File
+```shell
+git checkout 5.6-writing-json
+```
+```java
+package com.github.uladzimirkalesny.springbatchdemo;
+
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.database.PagingQueryProvider;
+import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
+import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
+import org.springframework.batch.item.json.JacksonJsonObjectMarshaller;
+import org.springframework.batch.item.json.builder.JsonFileItemWriterBuilder;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.jdbc.core.RowMapper;
+
+import javax.sql.DataSource;
+
+@EnableBatchProcessing
+@SpringBootApplication
+public class SpringBatchDemoApplication {
+
+    public static String INSERT_ORDER_SQL =
+            "INSERT INTO orders_output(order_id, first_name, last_name, email, item_id, item_name, cost, ship_date)" +
+                    "VALUES(:orderId, :firstName, :lastName, :email, :itemId, :itemName, :cost, :shipDate)";
+
+    private final JobBuilderFactory jobBuilderFactory;
+    private final StepBuilderFactory stepBuilderFactory;
+    private final DataSource dataSource;
+
+    public SpringBatchDemoApplication(JobBuilderFactory jobBuilderFactory,
+                                      StepBuilderFactory stepBuilderFactory,
+                                      DataSource dataSource) {
+        this.jobBuilderFactory = jobBuilderFactory;
+        this.stepBuilderFactory = stepBuilderFactory;
+        this.dataSource = dataSource;
+    }
+
+    @Bean
+    public PagingQueryProvider queryProvider() throws Exception {
+        SqlPagingQueryProviderFactoryBean factoryBean = new SqlPagingQueryProviderFactoryBean();
+        factoryBean.setSelectClause("SELECT order_id, first_name, last_name, email, cost, item_id, item_name, ship_date");
+        factoryBean.setFromClause("FROM orders");
+        factoryBean.setSortKey("order_id");
+        factoryBean.setDataSource(dataSource);
+
+        return factoryBean.getObject();
+    }
+
+    @Bean
+    public ItemReader<Order> itemReader() throws Exception {
+        return new JdbcPagingItemReaderBuilder<Order>()
+                .name("jdbcPagingItemReaderBuilder")
+                .dataSource(dataSource)
+                .queryProvider(queryProvider())
+                .pageSize(2)
+                .rowMapper(orderRowMapper())
+                .build();
+    }
+
+    private RowMapper<Order> orderRowMapper() {
+        return (rs, rowNum) -> {
+            Order order = new Order();
+            order.setOrderId(rs.getLong("order_id"));
+            order.setFirstName(rs.getString("first_name"));
+            order.setLastName(rs.getString("last_name"));
+            order.setEmail(rs.getString("email"));
+            order.setCost(rs.getBigDecimal("cost"));
+            order.setItemId(rs.getString("item_id"));
+            order.setItemName(rs.getString("item_name"));
+            order.setShipDate(rs.getDate("ship_date"));
+
+            return order;
+        };
+    }
+
+    @Bean
+    public ItemWriter<Order> jsonItemWriter() {
+        return new JsonFileItemWriterBuilder<Order>()
+                .name("jsonItemWriter")
+                .jsonObjectMarshaller(new JacksonJsonObjectMarshaller<>())
+                .resource(new FileSystemResource("/Users/Uladzimir_Kalesny/Downloads/orders.json"))
+                .build();
+    }
+
+    @Bean
+    public Step readFlatFileStep() throws Exception {
+        return this.stepBuilderFactory.get("readFlatFileStep")
+                .<Order, Order>chunk(2)
+                .reader(itemReader())
+                .writer(jsonItemWriter())
+                .build();
+    }
+
+    @Bean
+    public Job job() throws Exception {
+        return this.jobBuilderFactory.get("job")
+                .start(readFlatFileStep())
+                .build();
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBatchDemoApplication.class, args);
+    }
+
+}
+```
+Output orders.json file:
+```json
+[
+ {"orderId":1,"firstName":"John","lastName":"Doe","email":"john.doe@gmail.com","cost":1,"itemId":"1","itemName":"milk","shipDate":1671138000000},
+ {"orderId":2,"firstName":"Anna","lastName":"Doe","email":"anna.doe@gmail.com","cost":1,"itemId":"2","itemName":"potato","shipDate":1671051600000},
+ {"orderId":3,"firstName":"Brad","lastName":"Doe","email":"brad.doe@gmail.com","cost":1,"itemId":"3","itemName":"beer","shipDate":1670965200000}
+]
+```
+
 # TODO
 ```commandline
 docker exec -it postgresql psql -U postgres -d job_repository
