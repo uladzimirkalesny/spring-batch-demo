@@ -1325,3 +1325,11 @@ public class SpringBatchDemoApplication {
 ```
 The key point about this, it's `thread safe` so we can use this in a multi-threaded scenario.</br>
 One interesting thing to point out about this item reader is the complexity of paging within a database. It typically varies by your database implementation. Within this implementation, it is intelligent enough to detect what database you're using, and it will construct the appropriate paging query in order for the item reader to appropriately pull data from the data source. So this is one of those benefits you get out of the box from Spring Batch and it's item reader implementations.
+
+##### 5 ItemWriter
+During chunk-based processing an `ItemWriter` is used to write items the job has read and processed to a Data store.</br>
+Spring Batch provides the `ItemWriter` interface and several out of the box implementations for common data stores like relational databases, flat files, or Kafka topics.<br>
+A key point to remember about ItemWriters is multiple items are written as chunks to the data store as opposed to writing a single item at a time. 
+![img26.png](img%2Fimg26.png)
+The number of items written is determined by the chunk size, which helps keep our batch processing efficient.</br>
+List of some of the `ItemWriters` made available by the framework [`KafkaItemWriter, FlatFileItemWriter, HibernateItemWriter, JdbcItemWriter, JmsItemWriter, JpaItemWriter, MongoItemWriter, StaxItemWriter, JsonFileItemWriter`].
