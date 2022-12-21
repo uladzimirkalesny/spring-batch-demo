@@ -8,12 +8,14 @@ import org.springframework.batch.core.configuration.annotation.StepBuilderFactor
 import org.springframework.batch.item.ItemReader;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.database.PagingQueryProvider;
-import org.springframework.batch.item.database.builder.JdbcBatchItemWriterBuilder;
 import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
 import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
+import org.springframework.batch.item.json.JacksonJsonObjectMarshaller;
+import org.springframework.batch.item.json.builder.JsonFileItemWriterBuilder;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.RowMapper;
 
 import javax.sql.DataSource;
@@ -49,12 +51,6 @@ public class SpringBatchDemoApplication {
         return factoryBean.getObject();
     }
 
-    /**
-     * <ul>
-     * <li>queryProvider using in order to construct our SQL statement</li>
-     * <li>pageSize(2) specify how many items are in a page (amount of items). It's important that our page size also matches our chunk size.</li>
-     * </ul>
-     */
     @Bean
     public ItemReader<Order> itemReader() throws Exception {
         return new JdbcPagingItemReaderBuilder<Order>()
@@ -83,11 +79,11 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
-    public ItemWriter<Order> jdbcBatchItemWriterBuilder() {
-        return new JdbcBatchItemWriterBuilder<Order>()
-                .dataSource(dataSource)
-                .sql(INSERT_ORDER_SQL)
-                .beanMapped()
+    public ItemWriter<Order> jsonItemWriter() {
+        return new JsonFileItemWriterBuilder<Order>()
+                .name("jsonItemWriter")
+                .jsonObjectMarshaller(new JacksonJsonObjectMarshaller<>())
+                .resource(new FileSystemResource("/Users/Uladzimir_Kalesny/Downloads/orders.json"))
                 .build();
     }
 
@@ -96,7 +92,7 @@ public class SpringBatchDemoApplication {
         return this.stepBuilderFactory.get("readFlatFileStep")
                 .<Order, Order>chunk(2)
                 .reader(itemReader())
-                .writer(jdbcBatchItemWriterBuilder())
+                .writer(jsonItemWriter())
                 .build();
     }
 
