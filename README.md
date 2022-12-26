@@ -1785,6 +1785,66 @@ Another use case for an `ItemProcessor` is transformation.
 ![img28.png](img%2Fimg28.png)
 You will notice that I've generically typed the components within our chunk-based step, indicating the type of input or output expected. The `ItemReader` will ingest the data, one item at a time, passing it to the `processor` which then transforms our items from the type ItemA to ItemB. Our writer is generically typed for ItemB and after the transformation, it writes the transformed item to the data store.
 
+##### 6.1 - ItemProcessor Bean Validation
+```shell
+git checkout 6.1-item-processor-bean-validation
+```
+`BeanValidatingItemProcessor` is a processor that Spring Batch provides out of the box. We can use it to validate the items read into a step. To determine if an item is valid, the bean validating item processor consults JSR 380 validation annotations placed on a bean.</br>
+```java
+@Bean
+public ItemProcessor<Order, Order> orderValidatingItemProcessor() {
+    BeanValidatingItemProcessor<Order> beanValidatingItemProcessor = new BeanValidatingItemProcessor<>();
+    // set whether or not the processor will filter
+    // The alternative is for the processor to throw an error when there's a validation exception.
+    // In this case, we're just going to continue processing, we're just not going to process those items that cannot pass the validation enforced by this item processor.
+    beanValidatingItemProcessor.setFilter(true);
+    return beanValidatingItemProcessor;    
+}
+
+@Bean
+public Step readFlatFileStep() throws Exception {
+    return this.stepBuilderFactory.get("readFlatFileStep")
+        .<Order, Order>chunk(2)
+        .reader(itemReader())
+        .processor(orderValidatingItemProcessor())
+        .writer(jsonItemWriter())
+        .build();
+}
+```
+Add to pom.xml
+```xml
+<dependency>
+    <groupId>org.hibernate</groupId>
+    <artifactId>hibernate-validator</artifactId>
+    <version>5.1.3.Final</version>
+</dependency>
+<dependency>
+    <groupId>javax.el</groupId>
+    <artifactId>javax.el-api</artifactId>
+    <version>2.2.4</version>
+</dependency>
+<dependency>
+    <groupId>org.glassfish.web</groupId>
+    <artifactId>javax.el</artifactId>
+    <version>2.2.4</version>
+</dependency>
+<dependency>
+    <groupId>org.glassfish.jaxb</groupId>
+    <artifactId>jaxb-runtime</artifactId>
+</dependency>
+```
+Add to Order class validation annotation for going to configure the expression to only allow government emails:
+```java
+@Pattern(regexp = ".*\\.gov")
+private String email;
+```
+Output after job running:
+```
+[
+ {"orderId":4,"firstName":"Joe","lastName":"Doe","email":"joe.doe@gmail.gov","cost":1,"itemId":"4","itemName":"banana","shipDate":1670878800000}
+]
+
+```
 # TODO
 ```commandline
 docker exec -it postgresql psql -U postgres -d job_repository
