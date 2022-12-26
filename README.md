@@ -2051,6 +2051,7 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.RowMapper;
 
 import javax.sql.DataSource;
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @EnableBatchProcessing
@@ -2137,9 +2138,21 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
+    public ItemProcessor<TrackedOrder, TrackedOrder> freeShippingItemProcessor() {
+        return trackedOrder -> {
+            trackedOrder.setFreeShipping(trackedOrder.getCost().compareTo(BigDecimal.valueOf(2)) > 0);
+            return trackedOrder.isFreeShipping() ? trackedOrder : null;
+        };
+    }
+
+    @Bean
     public ItemProcessor<Order, TrackedOrder> compositeItemProcessor() {
         return new CompositeItemProcessorBuilder<Order, TrackedOrder>()
-                .delegates(orderValidatingItemProcessor(), trackedOrderItemProcessor())
+                .delegates(
+                        orderValidatingItemProcessor(),
+                        trackedOrderItemProcessor(),
+                        freeShippingItemProcessor()
+                )
                 .build();
     }
 
