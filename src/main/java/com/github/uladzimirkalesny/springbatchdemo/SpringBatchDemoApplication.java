@@ -13,6 +13,8 @@ import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuild
 import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
 import org.springframework.batch.item.json.JacksonJsonObjectMarshaller;
 import org.springframework.batch.item.json.builder.JsonFileItemWriterBuilder;
+import org.springframework.batch.item.support.builder.CompositeItemProcessorBuilder;
+import org.springframework.batch.item.validator.BeanValidatingItemProcessor;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
@@ -20,6 +22,7 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.RowMapper;
 
 import javax.sql.DataSource;
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @EnableBatchProcessing
@@ -90,6 +93,13 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
+    public ItemProcessor<Order, Order> orderValidatingItemProcessor() {
+        BeanValidatingItemProcessor<Order> beanValidatingItemProcessor = new BeanValidatingItemProcessor<>();
+        beanValidatingItemProcessor.setFilter(true);
+        return beanValidatingItemProcessor;
+    }
+
+    @Bean
     public ItemProcessor<Order, TrackedOrder> trackedOrderItemProcessor() {
         return order -> {
             TrackedOrder trackedOrder = new TrackedOrder(order);
@@ -99,11 +109,30 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
+    public ItemProcessor<TrackedOrder, TrackedOrder> freeShippingItemProcessor() {
+        return trackedOrder -> {
+            trackedOrder.setFreeShipping(trackedOrder.getCost().compareTo(BigDecimal.valueOf(2)) > 0);
+            return trackedOrder.isFreeShipping() ? trackedOrder : null;
+        };
+    }
+
+    @Bean
+    public ItemProcessor<Order, TrackedOrder> compositeItemProcessor() {
+        return new CompositeItemProcessorBuilder<Order, TrackedOrder>()
+                .delegates(
+                        orderValidatingItemProcessor(),
+                        trackedOrderItemProcessor(),
+                        freeShippingItemProcessor()
+                )
+                .build();
+    }
+
+    @Bean
     public Step chunkBasedStep() throws Exception {
         return this.stepBuilderFactory.get("readStep")
                 .<Order, TrackedOrder>chunk(2)
                 .reader(itemReader())
-                .processor(trackedOrderItemProcessor())
+                .processor(compositeItemProcessor())
                 .writer(jsonItemWriter())
                 .build();
     }
