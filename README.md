@@ -1769,6 +1769,22 @@ Output orders.json file:
 ]
 ```
 
+##### 6 ItemProcessor (Optional component)
+During chunk-based processing, business logic can be inserted between when items are read and when the items are written. To do this logic, Spring Batch provides the `ItemProcessor` interface.</br>
+Typical use cases for the `ItemProcessor` include transformation, validation, and filtering of the items flowing through chunk-based processing.
+```java
+public interface ItemProcessor<I, O> {
+    O process(I item) throws Exception;
+}
+```
+These represent the input and output of the processor. In the case of a transformation, the type accepted as input may differ from the type accepted as output, requiring the job to account for this change in type.</br>
+In some cases, you may need to include multiple processors within a chunk-based step. To support this, Spring Batch allows processors to be chained using a composite ItemProcessor.
+![img27.png](img%2Fimg27.png)
+The `ItemReader` will ingest the data one item at a time passing it to the `processor`, which decides whether to filter the item or determines if it is valid. In the case of filtering, we only pass items meeting the filter criteria to the `ItemWriter`. The same occurs for validation, although we could fail the job when validating. Valid items are then passed to the `ItemWriter` to be written to a data source.</br>
+Another use case for an `ItemProcessor` is transformation.
+![img28.png](img%2Fimg28.png)
+You will notice that I've generically typed the components within our chunk-based step, indicating the type of input or output expected. The `ItemReader` will ingest the data, one item at a time, passing it to the `processor` which then transforms our items from the type ItemA to ItemB. Our writer is generically typed for ItemB and after the transformation, it writes the transformed item to the data store.
+
 # TODO
 ```commandline
 docker exec -it postgresql psql -U postgres -d job_repository
