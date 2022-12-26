@@ -1769,6 +1769,178 @@ Output after job running:
 ]
 
 ```
+
+##### 6.2 - Implementing custom processor logic
+Spring Batch allows to create a custom item processor implementation.</br>
+```java
+package com.github.uladzimirkalesny.springbatchdemo;
+
+import org.springframework.beans.BeanUtils;
+
+public class TrackedOrder extends Order {
+    private String trackingNumber;
+    private boolean freeShipping;
+
+    public TrackedOrder() {
+    }
+
+    public TrackedOrder(Order order) {
+        BeanUtils.copyProperties(order, this);
+    }
+
+    public String getTrackingNumber() {
+        return trackingNumber;
+    }
+
+    public void setTrackingNumber(String trackingNumber) {
+        this.trackingNumber = trackingNumber;
+    }
+
+    public boolean isFreeShipping() {
+        return freeShipping;
+    }
+
+    public void setFreeShipping(boolean freeShipping) {
+        this.freeShipping = freeShipping;
+    }
+
+}
+```
+Go to create an item processor implementation that will transform an order into a tracked order.
+```java
+package com.github.uladzimirkalesny.springbatchdemo;
+
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.item.ItemProcessor;
+import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.database.PagingQueryProvider;
+import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuilder;
+import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
+import org.springframework.batch.item.json.JacksonJsonObjectMarshaller;
+import org.springframework.batch.item.json.builder.JsonFileItemWriterBuilder;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.jdbc.core.RowMapper;
+
+import javax.sql.DataSource;
+import java.util.UUID;
+
+@EnableBatchProcessing
+@SpringBootApplication
+public class SpringBatchDemoApplication {
+
+    public static String INSERT_ORDER_SQL =
+            "INSERT INTO orders_output(order_id, first_name, last_name, email, item_id, item_name, cost, ship_date)" +
+                    "VALUES(:orderId, :firstName, :lastName, :email, :itemId, :itemName, :cost, :shipDate)";
+
+    private final JobBuilderFactory jobBuilderFactory;
+    private final StepBuilderFactory stepBuilderFactory;
+    private final DataSource dataSource;
+
+    public SpringBatchDemoApplication(JobBuilderFactory jobBuilderFactory,
+                                      StepBuilderFactory stepBuilderFactory,
+                                      DataSource dataSource) {
+        this.jobBuilderFactory = jobBuilderFactory;
+        this.stepBuilderFactory = stepBuilderFactory;
+        this.dataSource = dataSource;
+    }
+
+    @Bean
+    public PagingQueryProvider queryProvider() throws Exception {
+        SqlPagingQueryProviderFactoryBean factoryBean = new SqlPagingQueryProviderFactoryBean();
+        factoryBean.setSelectClause("SELECT order_id, first_name, last_name, email, cost, item_id, item_name, ship_date");
+        factoryBean.setFromClause("FROM orders");
+        factoryBean.setSortKey("order_id");
+        factoryBean.setDataSource(dataSource);
+
+        return factoryBean.getObject();
+    }
+
+    @Bean
+    public ItemReader<Order> itemReader() throws Exception {
+        return new JdbcPagingItemReaderBuilder<Order>()
+                .name("jdbcPagingItemReaderBuilder")
+                .dataSource(dataSource)
+                .queryProvider(queryProvider())
+                .pageSize(2)
+                .rowMapper(orderRowMapper())
+                .build();
+    }
+
+    private RowMapper<Order> orderRowMapper() {
+        return (rs, rowNum) -> {
+            Order order = new Order();
+            order.setOrderId(rs.getLong("order_id"));
+            order.setFirstName(rs.getString("first_name"));
+            order.setLastName(rs.getString("last_name"));
+            order.setEmail(rs.getString("email"));
+            order.setCost(rs.getBigDecimal("cost"));
+            order.setItemId(rs.getString("item_id"));
+            order.setItemName(rs.getString("item_name"));
+            order.setShipDate(rs.getDate("ship_date"));
+
+            return order;
+        };
+    }
+
+    @Bean
+    public ItemWriter<TrackedOrder> jsonItemWriter() {
+        return new JsonFileItemWriterBuilder<TrackedOrder>()
+                .name("jsonItemWriter")
+                .jsonObjectMarshaller(new JacksonJsonObjectMarshaller<>())
+                .resource(new FileSystemResource("/Users/Uladzimir_Kalesny/Downloads/orders.json"))
+                .build();
+    }
+
+    @Bean
+    public ItemProcessor<Order, TrackedOrder> trackedOrderItemProcessor() {
+        return order -> {
+            TrackedOrder trackedOrder = new TrackedOrder(order);
+            trackedOrder.setTrackingNumber(UUID.randomUUID().toString());
+            return trackedOrder;
+        };
+    }
+
+    @Bean
+    public Step chunkBasedStep() throws Exception {
+        return this.stepBuilderFactory.get("readStep")
+                .<Order, TrackedOrder>chunk(2)
+                .reader(itemReader())
+                .processor(trackedOrderItemProcessor())
+                .writer(jsonItemWriter())
+                .build();
+    }
+
+    @Bean
+    public Job job() throws Exception {
+        return this.jobBuilderFactory.get("job")
+                .start(chunkBasedStep())
+                .build();
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBatchDemoApplication.class, args);
+    }
+
+}
+```
+Json output:
+```json
+[
+ {"orderId":1,"firstName":"John","lastName":"Doe","email":"john.doe@gmail.com","cost":1,"itemId":"1","itemName":"milk","shipDate":1671138000000,"trackingNumber":"36ed3711-2fb8-4b2f-a3a8-797866815e07","freeShipping":false},
+ {"orderId":2,"firstName":"Anna","lastName":"Doe","email":"anna.doe@gmail.com","cost":1,"itemId":"2","itemName":"potato","shipDate":1671051600000,"trackingNumber":"2d7a3a21-1b19-41f2-bdb9-6db24bef0575","freeShipping":false},
+ {"orderId":3,"firstName":"Brad","lastName":"Doe","email":"brad.doe@gmail.com","cost":1,"itemId":"3","itemName":"beer","shipDate":1670965200000,"trackingNumber":"a7bd12ab-9a9b-4fa2-9be7-a56423d45acd","freeShipping":false},
+ {"orderId":4,"firstName":"Joe","lastName":"Doe","email":"joe.doe@gmail.gov","cost":1,"itemId":"4","itemName":"banana","shipDate":1670878800000,"trackingNumber":"bbe443c4-c956-48f2-9d6b-374cc68c4a7b","freeShipping":false}
+]
+```
+
 # TODO
 ```commandline
 docker exec -it postgresql psql -U postgres -d job_repository

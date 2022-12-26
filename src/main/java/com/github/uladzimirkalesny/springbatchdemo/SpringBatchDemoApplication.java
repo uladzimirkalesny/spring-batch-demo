@@ -1,6 +1,5 @@
 package com.github.uladzimirkalesny.springbatchdemo;
 
-import org.aspectj.weaver.ast.Or;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
@@ -14,7 +13,6 @@ import org.springframework.batch.item.database.builder.JdbcPagingItemReaderBuild
 import org.springframework.batch.item.database.support.SqlPagingQueryProviderFactoryBean;
 import org.springframework.batch.item.json.JacksonJsonObjectMarshaller;
 import org.springframework.batch.item.json.builder.JsonFileItemWriterBuilder;
-import org.springframework.batch.item.validator.BeanValidatingItemProcessor;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
@@ -22,6 +20,7 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.RowMapper;
 
 import javax.sql.DataSource;
+import java.util.UUID;
 
 @EnableBatchProcessing
 @SpringBootApplication
@@ -82,8 +81,8 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
-    public ItemWriter<Order> jsonItemWriter() {
-        return new JsonFileItemWriterBuilder<Order>()
+    public ItemWriter<TrackedOrder> jsonItemWriter() {
+        return new JsonFileItemWriterBuilder<TrackedOrder>()
                 .name("jsonItemWriter")
                 .jsonObjectMarshaller(new JacksonJsonObjectMarshaller<>())
                 .resource(new FileSystemResource("/Users/Uladzimir_Kalesny/Downloads/orders.json"))
@@ -91,21 +90,20 @@ public class SpringBatchDemoApplication {
     }
 
     @Bean
-    public ItemProcessor<Order, Order> orderValidatingItemProcessor() {
-        BeanValidatingItemProcessor<Order> beanValidatingItemProcessor = new BeanValidatingItemProcessor<>();
-        // set whether or not the processor will filter
-        // The alternative is for the processor to throw an error when there's a validation exception.
-        // In this case, we're just going to continue processing, we're just not going to process those items that cannot pass the validation enforced by this item processor.
-        beanValidatingItemProcessor.setFilter(true);
-        return beanValidatingItemProcessor;
+    public ItemProcessor<Order, TrackedOrder> trackedOrderItemProcessor() {
+        return order -> {
+            TrackedOrder trackedOrder = new TrackedOrder(order);
+            trackedOrder.setTrackingNumber(UUID.randomUUID().toString());
+            return trackedOrder;
+        };
     }
 
     @Bean
-    public Step readStep() throws Exception {
+    public Step chunkBasedStep() throws Exception {
         return this.stepBuilderFactory.get("readStep")
-                .<Order, Order>chunk(2)
+                .<Order, TrackedOrder>chunk(2)
                 .reader(itemReader())
-                .processor(orderValidatingItemProcessor())
+                .processor(trackedOrderItemProcessor())
                 .writer(jsonItemWriter())
                 .build();
     }
@@ -113,7 +111,7 @@ public class SpringBatchDemoApplication {
     @Bean
     public Job job() throws Exception {
         return this.jobBuilderFactory.get("job")
-                .start(readStep())
+                .start(chunkBasedStep())
                 .build();
     }
 
