@@ -2742,6 +2742,130 @@ Spring Boot includes the job launcher command line runner that allows us to exec
 Enterprise scheduler such as `Quartz` to launch a Spring batch job. By design, the Spring framework does not include a scheduler. However, many enterprise schedulers can be used with the framework. This allows you to choose your scheduler provider or use the scheduler preferred by your company.</br>
 The final approach for launching a job is to set up a regular Spring MVC controller and launch the job in response to an HTTP request. This strategy is effective when jobs must be kicked off on demand or on an ad hoc basis.
 
+##### 8.2 - Scheduling with Spring
+The Spring Framework provides built-in support for scheduling of tasks that can be used to schedule a spring batch job.</br>
+`Scheduling` within the `Spring Framework` can be achieved using an `annotation-based approach` that requires minimal configuration.
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/job_repository
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    show-sql: true
+    open-in-view: false
+  sql:
+    init:
+      mode: always
+      data-locations: classpath:orders.sql
+  batch:
+    jdbc:
+      # when we launch a job, it should create the data model for the job repository within our schema if it doesn't exist
+      initialize-schema: always
+      isolation-level-for-create: default
+    job:
+      # Spring Boot does not to launch our jobs upon the initial bootstrap of the application
+      enabled: false
+
+```
+```java
+package com.github.uladzimirkalesny.springbatchdemo;
+
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.JobParametersInvalidException;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.repository.JobExecutionAlreadyRunningException;
+import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException;
+import org.springframework.batch.core.repository.JobRestartException;
+import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
+
+import java.time.LocalDateTime;
+import java.util.Date;
+
+@EnableBatchProcessing
+@EnableScheduling
+@SpringBootApplication
+public class SpringBatchDemoApplication {
+
+    private static Long COUNTER = 1L;
+
+    private final JobBuilderFactory jobBuilderFactory;
+    private final JobLauncher jobLauncher;
+    private final StepBuilderFactory stepBuilderFactory;
+
+    public SpringBatchDemoApplication(JobBuilderFactory jobBuilderFactory,
+                                      JobLauncher jobLauncher,
+                                      StepBuilderFactory stepBuilderFactory) {
+        this.jobBuilderFactory = jobBuilderFactory;
+        this.jobLauncher = jobLauncher;
+        this.stepBuilderFactory = stepBuilderFactory;
+    }
+
+    @Bean
+    public Step step() {
+        return this.stepBuilderFactory
+                .get("step")
+                .tasklet((contribution, chunkContext) -> {
+                    System.out.println("The run time is: " + LocalDateTime.now());
+                    return RepeatStatus.FINISHED;
+                })
+                .build();
+    }
+
+    @Bean
+    public Job job() {
+        return this.jobBuilderFactory.get("job")
+                .start(step())
+                .build();
+    }
+
+
+    /**
+     * Job will be triggered every 30 seconds
+     */
+    @Scheduled(cron = "0/30 * * * * *")
+    public void runJob() throws JobInstanceAlreadyCompleteException, JobExecutionAlreadyRunningException, JobParametersInvalidException, JobRestartException {
+        JobParametersBuilder jobParametersBuilder = new JobParametersBuilder();
+        jobParametersBuilder.addDate("runTime", new Date());
+        jobParametersBuilder.addLong("Counter", COUNTER++);
+        this.jobLauncher.run(job(), jobParametersBuilder.toJobParameters());
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBatchDemoApplication.class, args);
+    }
+
+}
+```
+There we see the job has started, but we have not launched it.
+```
+2022-12-27 23:43:30.135  INFO 24004 --- [   scheduling-1] o.s.b.c.l.support.SimpleJobLauncher      : Job: [SimpleJob: [name=job]] launched with the following parameters: [{runTime=1672173810004, Count
+er=1}]
+2022-12-27 23:43:30.188  INFO 24004 --- [   scheduling-1] o.s.batch.core.job.SimpleStepHandler     : Executing step: [step]
+The run time is: 2022-12-27T23:43:30.209340400
+2022-12-27 23:43:30.227  INFO 24004 --- [   scheduling-1] o.s.batch.core.step.AbstractStep         : Step: [step] executed in 39ms
+2022-12-27 23:43:30.250  INFO 24004 --- [   scheduling-1] o.s.b.c.l.support.SimpleJobLauncher      : Job: [SimpleJob: [name=job]] completed with the following parameters: [{runTime=1672173810004, Coun
+ter=1}] and the following status: [COMPLETED] in 86ms
+2022-12-27 23:44:00.038  INFO 24004 --- [   scheduling-1] o.s.b.c.l.support.SimpleJobLauncher      : Job: [SimpleJob: [name=job]] launched with the following parameters: [{runTime=1672173840012, Count
+er=2}]
+2022-12-27 23:44:00.064  INFO 24004 --- [   scheduling-1] o.s.batch.core.job.SimpleStepHandler     : Executing step: [step]
+The run time is: 2022-12-27T23:44:00.078760
+2022-12-27 23:44:00.092  INFO 24004 --- [   scheduling-1] o.s.batch.core.step.AbstractStep         : Step: [step] executed in 28ms
+2022-12-27 23:44:00.111  INFO 24004 --- [   scheduling-1] o.s.b.c.l.support.SimpleJobLauncher      : Job: [SimpleJob: [name=job]] completed with the following parameters: [{runTime=1672173840012, Coun
+ter=2}] and the following status: [COMPLETED] in 64ms
+```
+
 # TODO
 ```commandline
 docker exec -it postgresql psql -U postgres -d job_repository

@@ -16,3 +16,6 @@ spring:
       # when we launch a job, it should create the data model for the job repository within our schema if it doesn't exist
       initialize-schema: always
       isolation-level-for-create: default
+    job:
+      # Spring Boot does not to launch our jobs upon the initial bootstrap of the application
+      enabled: false
