@@ -2098,6 +2098,13 @@ public class SpringBatchDemoApplication {
 }
 ```
 
+### Resilient Batch Jobs
+##### 7.1 - Skip Logic
+Some batch jobs can tolerate small errors, and a single data error shouldn't cause the job to fail.</br>
+Skips allow us to continue processing when a particular item causes an exception to be thrown. The job will just ignore the exception and continue processing.</br>
+![img29.png](img%2Fimg29.png)
+Skips are a great way to make batch jobs more resilient in non-critical jobs.
+
 # TODO
 ```commandline
 docker exec -it postgresql psql -U postgres -d job_repository
