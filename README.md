@@ -2823,6 +2823,16 @@ Processing with thread : taskExecutor-2
 ```
 It's really important when you're working with multi-threaded jobs that you consult the Javadocs for each of the readers and writers you're working with. It will stay explicitly within them whether or not their thread is safe and you want to be sure to choose those threads safe implementations.
 
+### 8 Operating jobs
+##### 8.1 - Job Operation
+When operating batch jobs how a job is launched is very important. Jobs often have dependencies on other jobs and must be executed in an appropriate sequence for business operations to be successful. Spring boot and Spring batch offer a few strategies for launching a batch job.</br>
+However, many enterprises prefer to launch jobs with a `Scheduler`.
+There are `three primary strategies` for `launching` the execution of `Spring Batch jobs`, which include `Spring Boot`, `Schedulers`, and `REST`.</br>
+![img31.png](img%2Fimg31.png)
+Spring Boot includes the job launcher command line runner that allows us to execute jobs via an executable jar from the command line. Through the application dot properties file and the parameters used to launch the jar, we can control what jobs are launched and the job parameters they use. This strategy can be used with a cron on the operating system to schedule executions of job instances.</br>
+Enterprise scheduler such as `Quartz` to launch a Spring batch job. By design, the Spring framework does not include a scheduler. However, many enterprise schedulers can be used with the framework. This allows you to choose your scheduler provider or use the scheduler preferred by your company.</br>
+The final approach for launching a job is to set up a regular Spring MVC controller and launch the job in response to an HTTP request. This strategy is effective when jobs must be kicked off on demand or on an ad hoc basis.
+
 # TODO
 ```commandline
 docker exec -it postgresql psql -U postgres -d job_repository
