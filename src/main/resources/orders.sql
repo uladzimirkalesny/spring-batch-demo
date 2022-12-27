@@ -27,12 +27,14 @@ VALUES (7, 'Tony', 'Doe', 'tony.doe@gmail.gov', '5', '5', 'bread', '2022-12-12')
 
 CREATE TABLE orders_output
 (
-    order_id   BIGINT,
-    first_name TEXT,
-    last_name  TEXT,
-    email      TEXT,
-    cost       TEXT,
-    item_id    TEXT,
-    item_name  TEXT,
-    ship_date  DATE
+    order_id        BIGINT,
+    first_name      TEXT,
+    last_name       TEXT,
+    email           TEXT,
+    cost            TEXT,
+    item_id         TEXT,
+    item_name       TEXT,
+    ship_date       DATE,
+    tracking_number TEXT,
+    free_shipping   BOOLEAN
 );
