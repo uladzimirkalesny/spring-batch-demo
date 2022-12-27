@@ -1,7 +1,6 @@
 package com.github.uladzimirkalesny.springbatchdemo;
 
 import org.springframework.batch.core.Job;
-import org.springframework.batch.core.SkipListener;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
@@ -21,6 +20,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.retry.RetryCallback;
+import org.springframework.retry.RetryContext;
+import org.springframework.retry.RetryListener;
 
 import javax.sql.DataSource;
 import java.math.BigDecimal;
@@ -110,28 +112,33 @@ public class SpringBatchDemoApplication {
     }
 
     private String getTrackingNumber() {
-        if (Math.random() < .3) {
+        if (Math.random() < .5) {
             throw new RuntimeException("Order Processing Exception");
         }
         return UUID.randomUUID().toString();
     }
 
     @Bean
-    public SkipListener<Order, TrackedOrder> skipListener() {
-        return new SkipListener<>() {
+    public RetryListener retryListener() {
+        return new RetryListener() {
             @Override
-            public void onSkipInRead(Throwable t) {
+            public <T, E extends Throwable> boolean open(RetryContext retryContext, RetryCallback<T, E> retryCallback) {
+                if (retryContext.getRetryCount() > 0) {
+                    System.out.println("Attempting retry");
+                }
+                return true;
+            }
+
+            @Override
+            public <T, E extends Throwable> void close(RetryContext retryContext, RetryCallback<T, E> retryCallback, Throwable throwable) {
 
             }
 
             @Override
-            public void onSkipInWrite(TrackedOrder item, Throwable t) {
-
-            }
-
-            @Override
-            public void onSkipInProcess(Order item, Throwable t) {
-                System.out.println("Skipping processing of item with id: " + item.getItemId());
+            public <T, E extends Throwable> void onError(RetryContext retryContext, RetryCallback<T, E> retryCallback, Throwable throwable) {
+                if (retryContext.getRetryCount() > 0) {
+                    System.out.println("Failure occurred requiring a retry");
+                }
             }
         };
     }
@@ -162,9 +169,9 @@ public class SpringBatchDemoApplication {
                 .reader(itemReader())
                 .processor(compositeItemProcessor())
                 .faultTolerant()
-                .skip(RuntimeException.class)
-                .skipLimit(5)
-                .listener(skipListener())
+                .retry(RuntimeException.class)
+                .retryLimit(5)
+                .listener(retryListener())
                 .writer(jsonItemWriter())
                 .build();
     }
