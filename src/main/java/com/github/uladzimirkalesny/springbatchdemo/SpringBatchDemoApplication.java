@@ -1,6 +1,7 @@
 package com.github.uladzimirkalesny.springbatchdemo;
 
 import org.springframework.batch.core.Job;
+import org.springframework.batch.core.SkipListener;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
@@ -103,8 +104,35 @@ public class SpringBatchDemoApplication {
     public ItemProcessor<Order, TrackedOrder> trackedOrderItemProcessor() {
         return order -> {
             TrackedOrder trackedOrder = new TrackedOrder(order);
-            trackedOrder.setTrackingNumber(UUID.randomUUID().toString());
+            trackedOrder.setTrackingNumber(this.getTrackingNumber());
             return trackedOrder;
+        };
+    }
+
+    private String getTrackingNumber() {
+        if (Math.random() < .3) {
+            throw new RuntimeException("Order Processing Exception");
+        }
+        return UUID.randomUUID().toString();
+    }
+
+    @Bean
+    public SkipListener<Order, TrackedOrder> skipListener() {
+        return new SkipListener<>() {
+            @Override
+            public void onSkipInRead(Throwable t) {
+
+            }
+
+            @Override
+            public void onSkipInWrite(TrackedOrder item, Throwable t) {
+
+            }
+
+            @Override
+            public void onSkipInProcess(Order item, Throwable t) {
+                System.out.println("Skipping processing of item with id: " + item.getItemId());
+            }
         };
     }
 
@@ -133,6 +161,10 @@ public class SpringBatchDemoApplication {
                 .<Order, TrackedOrder>chunk(2)
                 .reader(itemReader())
                 .processor(compositeItemProcessor())
+                .faultTolerant()
+                .skip(RuntimeException.class)
+                .skipLimit(5)
+                .listener(skipListener())
                 .writer(jsonItemWriter())
                 .build();
     }
