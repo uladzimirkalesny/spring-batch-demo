@@ -2829,7 +2829,7 @@ When operating batch jobs how a job is launched is very important. Jobs often ha
 However, many enterprises prefer to launch jobs with a `Scheduler`.
 There are `three primary strategies` for `launching` the execution of `Spring Batch jobs`, which include `Spring Boot`, `Schedulers`, and `REST`.</br>
 ![img31.png](img%2Fimg31.png)
-Spring Boot includes the job launcher command line runner that allows us to execute jobs via an executable jar from the command line. Through the application dot properties file and the parameters used to launch the jar, we can control what jobs are launched and the job parameters they use. This strategy can be used with a cron on the operating system to schedule executions of job instances.</br>
+Spring Boot includes the job launcher command line runner that allows us to execute jobs via an executable jar from the command line. Through the application dot properties file and the parameters used to launch the jar, we can control what jobs are launched and the job parameters they use. This strategy can be used with a cron on the operating system to schedule executions of job instances. Spring Boot's JobLauncherCommandLineRunner will execute all jobs found in the application context on startup or can be configured to launch specific jobs using the `spring.batch.job.names` property.</br>
 Enterprise scheduler such as `Quartz` to launch a Spring batch job. By design, the Spring framework does not include a scheduler. However, many enterprise schedulers can be used with the framework. This allows you to choose your scheduler provider or use the scheduler preferred by your company.</br>
 The final approach for launching a job is to set up a regular Spring MVC controller and launch the job in response to an HTTP request. This strategy is effective when jobs must be kicked off on demand or on an ad hoc basis.
 
@@ -2959,6 +2959,151 @@ The run time is: 2022-12-27T23:44:00.078760
 2022-12-27 23:44:00.111  INFO 24004 --- [   scheduling-1] o.s.b.c.l.support.SimpleJobLauncher      : Job: [SimpleJob: [name=job]] completed with the following parameters: [{runTime=1672173840012, Coun
 ter=2}] and the following status: [COMPLETED] in 64ms
 ```
+
+##### 8.3 - Scheduling jobs
+```shell
+git checkout 8.3-scheduling-jobs
+```
+`Spring Batch` supports many `schedulers`, including an open source Java based `scheduler` named `Quartz`. Within `Quartz`, a `scheduler` is used to trigger a job. These concepts align well with those found in Spring Batch, making the two a great pair.</br>
+Include the dependencies for Quartz to pom.xml:
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-quartz</artifactId>
+</dependency>
+```
+Application class extend a QuartzJobBean
+```java
+package com.github.uladzimirkalesny.springbatchdemo;
+
+import org.quartz.JobBuilder;
+import org.quartz.JobDetail;
+import org.quartz.JobExecutionContext;
+import org.quartz.SimpleScheduleBuilder;
+import org.quartz.Trigger;
+import org.quartz.TriggerBuilder;
+import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobParameters;
+import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.Step;
+import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
+import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
+import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.explore.JobExplorer;
+import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.launch.support.RunIdIncrementer;
+import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.scheduling.quartz.QuartzJobBean;
+
+import java.time.LocalDateTime;
+
+@EnableBatchProcessing
+@SpringBootApplication
+public class SpringBatchDemoApplication extends QuartzJobBean {
+
+    private final JobBuilderFactory jobBuilderFactory;
+    // provided by Spring Batch
+    private final JobExplorer jobExplorer;
+    private final JobLauncher jobLauncher;
+    private final StepBuilderFactory stepBuilderFactory;
+
+    public SpringBatchDemoApplication(JobBuilderFactory jobBuilderFactory,
+                                      JobExplorer jobExplorer,
+                                      JobLauncher jobLauncher,
+                                      StepBuilderFactory stepBuilderFactory) {
+        this.jobBuilderFactory = jobBuilderFactory;
+        this.jobExplorer = jobExplorer;
+        this.jobLauncher = jobLauncher;
+        this.stepBuilderFactory = stepBuilderFactory;
+    }
+
+    /**
+     * This is where we're going to launch our job
+     */
+    @Override
+    protected void executeInternal(JobExecutionContext context) {
+        JobParameters jobParameters = new JobParametersBuilder(jobExplorer)
+                .getNextJobParameters(job()) // this is going to cause the job parameters to auto-increment
+                .toJobParameters();
+
+        try {
+            // using the jobLauncher we can then go ahead and run our job with the parameters that we've specified.
+            this.jobLauncher.run(job(), jobParameters);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    // Quartz dependency
+    @Bean
+    public JobDetail jobDetail() {
+        return JobBuilder.newJob(SpringBatchDemoApplication.class) // class that contains our job
+                .storeDurably() // this will cause information regarding our job to be retained
+                .build();
+    }
+
+    // Quartz dependency
+    // This is going to determine when we execute our job
+    @Bean
+    public Trigger trigger() {
+        // build schedule
+        SimpleScheduleBuilder simpleScheduleBuilder = SimpleScheduleBuilder.simpleSchedule()
+                .withIntervalInSeconds(30) // interval
+                .repeatForever();
+
+        // trigger that is based off of a schedule
+        return TriggerBuilder.newTrigger()
+                .forJob(jobDetail()) // hat's going to cause this trigger to apply to the job we've defined within our jobDetail method
+                .withSchedule(simpleScheduleBuilder) // specify our schedule
+                .build();
+    }
+
+    @Bean
+    public Step step() {
+        return this.stepBuilderFactory
+                .get("step")
+                .tasklet((contribution, chunkContext) -> {
+                    System.out.println("The run time is: " + LocalDateTime.now());
+                    return RepeatStatus.FINISHED;
+                })
+                .build();
+    }
+
+    @Bean
+    public Job job() {
+        return this.jobBuilderFactory.get("job")
+                // We're going to be executing this job on a schedule we need to be able to automatically increment the job parameters.
+                // That way we get separate job instances with every run
+                .incrementer(new RunIdIncrementer())
+                .start(step())
+                .build();
+    }
+
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBatchDemoApplication.class, args);
+    }
+
+}
+```
+Console Output:
+```
+2022-12-28 00:33:17.302  INFO 27400 --- [eduler_Worker-1] o.s.b.c.l.support.SimpleJobLauncher      : Job: [SimpleJob: [name=job]] launched with the following parameters: [{run.id=1}]
+2022-12-28 00:33:17.758  INFO 27400 --- [eduler_Worker-1] o.s.batch.core.job.SimpleStepHandler     : Executing step: [step]
+The run time is: 2022-12-28T00:33:17.798786900
+2022-12-28 00:33:17.837  INFO 27400 --- [eduler_Worker-1] o.s.batch.core.step.AbstractStep         : Step: [step] executed in 79ms
+2022-12-28 00:33:17.880  INFO 27400 --- [eduler_Worker-1] o.s.b.c.l.support.SimpleJobLauncher      : Job: [SimpleJob: [name=job]] completed with the following parameters: [{run.id=1}] and the followin
+g status: [COMPLETED] in 504ms
+2022-12-28 00:33:45.674  INFO 27400 --- [eduler_Worker-2] o.s.b.c.l.support.SimpleJobLauncher      : Job: [SimpleJob: [name=job]] launched with the following parameters: [{run.id=2}]
+2022-12-28 00:33:45.693  INFO 27400 --- [eduler_Worker-2] o.s.batch.core.job.SimpleStepHandler     : Executing step: [step]
+The run time is: 2022-12-28T00:33:45.705720200
+2022-12-28 00:33:45.719  INFO 27400 --- [eduler_Worker-2] o.s.batch.core.step.AbstractStep         : Step: [step] executed in 26ms
+2022-12-28 00:33:45.738  INFO 27400 --- [eduler_Worker-2] o.s.b.c.l.support.SimpleJobLauncher      : Job: [SimpleJob: [name=job]] completed with the following parameters: [{run.id=2}] and the followin
+g status: [COMPLETED] in 57ms
+```
+The creators of Spring Batch intentionally decided to make the scheduler agnostic so that any scheduling framework can be used to schedule jobs with Spring Batch.
 
 # TODO
 ```commandline
