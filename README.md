@@ -2383,6 +2383,14 @@ Skipping processing of item with id: 1
 Skipping processing of item with id: 5
 ```
 
+##### 7.3 - Retry Logic
+When processing chunks of data in a batch job, issues can arise that are just a matter of bad timing and they can be resolved by simply reattempting to process an item.</br>
+For these types of issues, `Spring Batch's Retry` capability can prevent bad timing.
+![img30.png](img%2Fimg30.png)
+During processing of the second item in the chunk, the web service has an intermittent issue. It's not a hard failure.</br>
+It could just be small network blip. If we have configured Spring Batch's retry capabilities, the framework will reattempt processing of the item.</br>
+This time when we attempt to process the item, the web service has become available. So, when we reattempt processing, the item will complete successfully without any intervention by a batch job operator. Job then can successfully complete.
+
 # TODO
 ```commandline
 docker exec -it postgresql psql -U postgres -d job_repository
